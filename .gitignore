@@ -1,0 +1,19 @@
+# macOS
+.DS_Store
+
+# IntelliJ / Android Studio
+*.iml
+.idea/
+
+# Gradle
+.gradle/
+**/build/
+/captures
+local.properties
+
+# Android NDK / native
+.cxx
+.externalNativeBuild
+
+# Kotlin
+.kotlin/
