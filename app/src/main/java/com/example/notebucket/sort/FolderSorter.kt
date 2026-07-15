@@ -1,5 +1,6 @@
 package com.example.notebucket.sort
 
+import android.util.Log
 import com.example.notebucket.ai.BgeEmbedder
 import kotlin.math.sqrt
 
@@ -23,6 +24,10 @@ class FolderSorter(
     private val _folders = mutableListOf<Folder>()
     private val _notes = mutableListOf<Note>()
 
+    companion object {
+        private const val TAG = "FolderSorter"
+    }
+
     val folders: List<Folder> get() = _folders.toList()
     val notes: List<Note> get() = _notes.toList()
 
@@ -32,6 +37,8 @@ class FolderSorter(
     suspend fun commit(text: String): AssignmentResult {
         val embedding = embedder.embedNote(text)
 
+        Log.d(TAG, "commit: text='${text.take(60)}' emb[0..4]=${embedding.take(5).joinToString(",") { "%.4f".format(it) }} norm=${sqrt(embedding.fold(0f) { a, v -> a + v * v })}")
+
         var bestFolder: Folder? = null
         var bestSim = -1f
 
@@ -39,12 +46,15 @@ class FolderSorter(
             val centroid = folder.centroid
             if (centroid != null) {
                 val sim = cosine(embedding, centroid)
+                Log.d(TAG, "  vs folder '${folder.name}' (n=${folder.noteCount}) sim=${"%.4f".format(sim)}")
                 if (sim > bestSim) {
                     bestSim = sim
                     bestFolder = folder
                 }
             }
         }
+
+        Log.d(TAG, "  bestSim=${"%.4f".format(bestSim)} threshold=${"%.4f".format(threshold)} -> ${if (bestFolder != null && bestSim >= threshold) "ASSIGN to '${bestFolder.name}'" else "NEW FOLDER"}")
 
         val folder: Folder
         val isNew: Boolean
