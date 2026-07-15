@@ -106,7 +106,7 @@ Java_com_example_notebucket_ai_NativeBridge_embed(
     int32_t needed = llama_tokenize(
         g_vocab, text, text_len,
         nullptr, 0,
-        true, false);
+        true, true);
 
     if (needed < 0) needed = -needed;
     if (needed <= 0) {
@@ -119,7 +119,7 @@ Java_com_example_notebucket_ai_NativeBridge_embed(
     int32_t n_tokens = llama_tokenize(
         g_vocab, text, text_len,
         tokens.data(), (int32_t) tokens.size(),
-        true, false);
+        true, true);
 
     env->ReleaseStringUTFChars(jtext, text);
 

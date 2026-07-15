@@ -1,3 +1,68 @@
 <resources>
-    <string name="app_name">NoteBucket Spike</string>
+    <string name="app_name">NoteBucket</string>
+
+    <string name="onboarding_title">NoteBucket</string>
+    <string name="onboarding_privacy_heading">Private by design</string>
+    <string name="onboarding_privacy_body">Notes never leave your device. No cloud, no accounts, no analytics. An on-device embedding model (BGE-small) sorts your notes into folders and powers semantic search — all locally.</string>
+    <string name="onboarding_model_heading">Loading on-device model…</string>
+    <string name="onboarding_model_body">BGE-small-en-v1.5 (~33 MB) is being unpacked and loaded into native memory. This happens once; subsequent opens are instant.</string>
+    <string name="onboarding_continue">Continue</string>
+    <string name="onboarding_retry">Retry</string>
+
+    <string name="home_title">NoteBucket</string>
+    <string name="home_folders_section">Folders</string>
+    <string name="home_search_hint">Search notes…</string>
+    <string name="home_empty">No folders yet. Tap + to add your first note.</string>
+    <string name="home_new_note">New note</string>
+
+    <string name="noteinput_title">New note</string>
+    <string name="noteinput_hint">Type or paste a note. Done sorts it into a folder.</string>
+    <string name="noteinput_done">Done</string>
+    <string name="noteinput_draft_restored">Restored your last draft.</string>
+    <string name="noteinput_assigned">Filed in \"%1$s\"</string>
+    <string name="noteinput_new_folder">Created folder \"%1$s\"</string>
+
+    <string name="folder_detail_rename">Rename folder</string>
+    <string name="folder_detail_delete_note">Delete note</string>
+    <string name="folder_detail_empty">No notes in this folder yet.</string>
+
+    <string name="search_title">Search</string>
+    <string name="search_hint">What are you looking for?</string>
+    <string name="search_filter_folder">Folder</string>
+    <string name="search_filter_date">Date range</string>
+    <string name="search_no_results">No matches.</string>
+    <string name="search_empty_state">Type a query to search across all notes.</string>
+
+    <string name="settings_title">Settings</string>
+    <string name="settings_threshold">Folder sensitivity (threshold)</string>
+    <string name="settings_threshold_help">Higher = more folders (strict match). Lower = fewer folders (loose match). Default 0.55.</string>
+    <string name="settings_storage">Storage</string>
+    <string name="settings_storage_notes">Notes: %1$d</string>
+    <string name="settings_storage_folders">Folders: %1$d</string>
+    <string name="settings_storage_db">Database size: %1$s</string>
+    <string name="settings_clear_data">Clear all data</string>
+    <string name="settings_clear_confirm">Delete all notes, folders, and drafts? This cannot be undone.</string>
+    <string name="settings_clear_confirm_yes">Delete everything</string>
+    <string name="settings_clear_cancel">Cancel</string>
+    <string name="settings_clear_done">All data cleared.</string>
+    <string name="settings_model_status_loaded">Model: loaded</string>
+    <string name="settings_model_status_not_loaded">Model: not loaded</string>
+    <string name="settings_model_reload">Reload model</string>
+
+    <string name="note_detail_title">Note</string>
+    <string name="note_detail_folder">Folder</string>
+    <string name="note_detail_timestamp">Saved</string>
+    <string name="note_detail_delete">Delete</string>
+    <string name="note_detail_recategorize">Move to folder…</string>
+
+    <string name="action_settings">Settings</string>
+    <string name="action_back">Back</string>
+    <string name="action_close">Close</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_save">Save</string>
+    <string name="action_confirm">Confirm</string>
+    <string name="action_search">Search</string>
+
+    <string name="common_loading">Loading…</string>
+    <string name="common_error">Error: %1$s</string>
 </resources>

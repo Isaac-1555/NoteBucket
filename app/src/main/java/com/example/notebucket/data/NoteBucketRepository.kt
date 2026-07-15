@@ -1,0 +1,101 @@
+package com.example.notebucket.data
+
+import com.example.notebucket.data.dao.DraftDao
+import com.example.notebucket.data.dao.FolderDao
+import com.example.notebucket.data.dao.NoteDao
+import com.example.notebucket.data.entity.DraftEntity
+import com.example.notebucket.data.mapper.toDomain
+import com.example.notebucket.data.mapper.toEntity
+import com.example.notebucket.sort.Folder
+import com.example.notebucket.sort.Note
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+import javax.inject.Inject
+import javax.inject.Singleton
+
+@Singleton
+class NoteBucketRepository @Inject constructor(
+    private val folderDao: FolderDao,
+    private val noteDao: NoteDao,
+    private val draftDao: DraftDao
+) {
+
+    fun observeFolders(): Flow<List<Folder>> =
+        folderDao.observeAll().map { rows -> rows.map { it.toDomain() } }
+
+    fun observeFolder(id: String): Flow<Folder?> =
+        folderDao.observeById(id).map { it?.toDomain() }
+
+    fun observeNotesByFolder(folderId: String): Flow<List<Note>> =
+        noteDao.observeByFolder(folderId).map { rows -> rows.map { it.toDomain() } }
+
+    fun observeNote(id: String): Flow<Note?> =
+        noteDao.observeById(id).map { it?.toDomain() }
+
+    fun observeAllNotes(): Flow<List<Note>> =
+        noteDao.observeAll().map { rows -> rows.map { it.toDomain() } }
+
+    fun observeDraft(): Flow<DraftEntity?> = draftDao.observe()
+
+    suspend fun getDraft(): DraftEntity? = draftDao.get()
+
+    suspend fun saveDraft(text: String) {
+        draftDao.upsert(DraftEntity(text = text, updatedAt = System.currentTimeMillis()))
+    }
+
+    suspend fun deleteDraft() = draftDao.delete()
+
+    suspend fun getAllFolders(): List<Folder> = folderDao.getAll().map { it.toDomain() }
+
+    suspend fun getFolder(id: String): Folder? = folderDao.getById(id)?.toDomain()
+
+    suspend fun getNote(id: String): Note? = noteDao.getById(id)?.toDomain()
+
+    suspend fun getAllNotes(): List<Note> = noteDao.getAll().map { it.toDomain() }
+
+    suspend fun getNotesByFolder(folderId: String): List<Note> =
+        noteDao.getByFolder(folderId).map { it.toDomain() }
+
+    suspend fun insertFolder(folder: Folder, createdAt: Long = System.currentTimeMillis()) {
+        folderDao.upsert(folder.toEntity(createdAt))
+    }
+
+    suspend fun insertNote(note: Note) {
+        noteDao.upsert(note.toEntity())
+    }
+
+    suspend fun updateFolderCentroid(folderId: String, centroid: FloatArray, noteCount: Int) {
+        folderDao.updateCentroid(folderId, centroid.toEntityBytes(), noteCount)
+    }
+
+    suspend fun renameFolder(folderId: String, newName: String) {
+        folderDao.rename(folderId, newName)
+    }
+
+    suspend fun deleteFolder(folderId: String) {
+        folderDao.deleteById(folderId)
+    }
+
+    suspend fun deleteNote(noteId: String) {
+        noteDao.deleteById(noteId)
+    }
+
+    suspend fun moveNote(noteId: String, newFolderId: String) {
+        noteDao.move(noteId, newFolderId)
+    }
+
+    suspend fun noteCount(): Int = noteDao.count()
+    suspend fun folderCount(): Int = folderDao.count()
+
+    suspend fun clearAll() {
+        noteDao.clear()
+        folderDao.clear()
+        draftDao.delete()
+    }
+
+    private fun FloatArray.toEntityBytes(): ByteArray {
+        val buffer = java.nio.ByteBuffer.allocate(size * 4).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+        buffer.asFloatBuffer().put(this)
+        return buffer.array()
+    }
+}

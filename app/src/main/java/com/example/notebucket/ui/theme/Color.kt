@@ -1,0 +1,28 @@
+package com.example.notebucket.ui.theme
+
+import androidx.compose.ui.graphics.Color
+
+val md_primary = Color(0xFF006A6A)
+val md_onPrimary = Color(0xFFFFFFFF)
+val md_primaryContainer = Color(0xFF6FF7F6)
+val md_onPrimaryContainer = Color(0xFF002020)
+val md_secondary = Color(0xFF4A6363)
+val md_onSecondary = Color(0xFFFFFFFF)
+val md_secondaryContainer = Color(0xFFCCE8E7)
+val md_onSecondaryContainer = Color(0xFF041F1F)
+val md_tertiary = Color(0xFF4B6074)
+val md_onTertiary = Color(0xFFFFFFFF)
+val md_tertiaryContainer = Color(0xFFCDE6FF)
+val md_onTertiaryContainer = Color(0xFF041C2B)
+val md_error = Color(0xFFBA1A1A)
+val md_onError = Color(0xFFFFFFFF)
+val md_errorContainer = Color(0xFFFFDAD6)
+val md_onErrorContainer = Color(0xFF410002)
+val md_background = Color(0xFFF4FBFA)
+val md_onBackground = Color(0xFF161D1D)
+val md_surface = Color(0xFFF4FBFA)
+val md_onSurface = Color(0xFF161D1D)
+val md_surfaceVariant = Color(0xFFDAE5E3)
+val md_onSurfaceVariant = Color(0xFF3F4948)
+val md_outline = Color(0xFF6F7978)
+val md_outlineVariant = Color(0xFFBEC9C7)

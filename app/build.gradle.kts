@@ -1,6 +1,8 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.hilt)
 }
 
 android {
@@ -8,21 +10,17 @@ android {
     ndkVersion = "28.2.13676358"
 
     compileSdk {
-        version = release(36) {
-            minorApiLevel = 1
-        }
+        version = release(36) { minorApiLevel = 1 }
     }
 
     defaultConfig {
         applicationId = "com.example.notebucket"
         minSdk = 31
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0-spike"
+        versionCode = 2
+        versionName = "0.2.0"
 
-        ndk {
-            abiFilters += "arm64-v8a"
-        }
+        ndk { abiFilters += "arm64-v8a" }
 
         externalNativeBuild {
             cmake {
@@ -58,21 +56,38 @@ android {
         targetCompatibility = JavaVersion.VERSION_11
     }
 
-    buildFeatures {
-        compose = true
+    buildFeatures { compose = true }
+
+    ksp {
+        arg("room.schemaLocation", "$projectDir/schemas")
     }
 }
 
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.lifecycle.process)
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.material.icons.core)
+    implementation(libs.androidx.compose.material.icons.extended)
+    implementation(libs.androidx.navigation.compose)
+    implementation(libs.androidx.datastore.preferences)
+    implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
+    implementation(libs.hilt.navigation.compose)
+    implementation(libs.hilt.work)
+    ksp(libs.hilt.ext.compiler)
     implementation(libs.coroutines.android)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }
