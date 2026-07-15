@@ -17,3 +17,7 @@ local.properties
 
 # Kotlin
 .kotlin/
+
+# Model weights (fetched separately, too large for git)
+*.gguf
+app/src/main/assets/*.gguf
