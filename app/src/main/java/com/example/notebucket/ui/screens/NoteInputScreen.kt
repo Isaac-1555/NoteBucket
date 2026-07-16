@@ -6,6 +6,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,9 +17,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
@@ -26,9 +30,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -40,6 +46,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -58,6 +65,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -71,7 +79,10 @@ import com.example.notebucket.R
 import com.example.notebucket.data.AttachmentStorage
 import com.example.notebucket.data.NoteBucketRepository
 import com.example.notebucket.data.entity.AttachmentEntity
+import com.example.notebucket.sort.Folder
 import com.example.notebucket.sort.FolderRouter
+import com.example.notebucket.sort.RoutingResult
+import com.example.notebucket.ui.theme.FolderPalette
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -98,7 +109,11 @@ data class NoteInputState(
     val snackbar: String? = null,
     val error: String? = null,
     val pendingAttachments: List<PendingAttachment> = emptyList(),
-    val isListening: Boolean = false
+    val isListening: Boolean = false,
+    val disambiguationResult: RoutingResult? = null,
+    val pendingText: String = "",
+    val showFullFolderList: Boolean = false,
+    val allFolders: List<Folder> = emptyList()
 ) {
     val text: String get() = textFieldValue.text
     val isNotBlank: Boolean get() = text.isNotBlank()
@@ -251,29 +266,18 @@ class NoteInputViewModel @Inject constructor(
         _state.value = _state.value.copy(isCommitting = true)
         viewModelScope.launch {
             try {
-                val result = router.commit(text)
-                val noteId = result.note.id
-                for (pending in _state.value.pendingAttachments) {
-                    val entity = AttachmentEntity(
-                        id = pending.id,
-                        noteId = noteId,
-                        fileName = pending.fileName,
-                        mimeType = pending.mimeType,
-                        filePath = pending.filePath,
-                        createdAt = System.currentTimeMillis()
+                val result = router.routeForDisplay(text)
+                if (result.needsDisambiguation) {
+                    _state.value = _state.value.copy(
+                        isCommitting = false,
+                        disambiguationResult = result,
+                        pendingText = text,
+                        showFullFolderList = false
                     )
-                    repo.insertAttachment(entity)
+                } else {
+                    val folderId = result.candidates.first().folder.id
+                    finalizeCommit(text, folderId, result.embedding)
                 }
-                repo.deleteDraft()
-                _state.value = _state.value.copy(
-                    textFieldValue = TextFieldValue(""),
-                    isCommitting = false,
-                    pendingAttachments = emptyList(),
-                    snackbar = if (result.isNewFolder)
-                        "Created folder \"${result.folder.name}\""
-                    else
-                        "Filed in \"${result.folder.name}\""
-                )
             } catch (t: Throwable) {
                 _state.value = _state.value.copy(
                     isCommitting = false,
@@ -281,6 +285,73 @@ class NoteInputViewModel @Inject constructor(
                 )
             }
         }
+    }
+
+    fun onFolderChosen(folderId: String) {
+        val text = _state.value.pendingText
+        val embedding = _state.value.disambiguationResult?.embedding ?: return
+        _state.value = _state.value.copy(
+            disambiguationResult = null,
+            showFullFolderList = false,
+            allFolders = emptyList(),
+            isCommitting = true
+        )
+        viewModelScope.launch {
+            try {
+                finalizeCommit(text, folderId, embedding)
+            } catch (t: Throwable) {
+                _state.value = _state.value.copy(
+                    isCommitting = false,
+                    error = t.message ?: "Failed to commit"
+                )
+            }
+        }
+    }
+
+    fun showFullFolderPicker() {
+        viewModelScope.launch {
+            val folders = repo.getAllFolders()
+            _state.value = _state.value.copy(
+                showFullFolderList = true,
+                allFolders = folders
+            )
+        }
+    }
+
+    fun dismissDisambiguation() {
+        _state.value = _state.value.copy(
+            disambiguationResult = null,
+            pendingText = "",
+            showFullFolderList = false,
+            allFolders = emptyList()
+        )
+    }
+
+    private suspend fun finalizeCommit(text: String, folderId: String, embedding: FloatArray) {
+        val result = router.commitToFolder(text, folderId, embedding)
+        val noteId = result.note.id
+        for (pending in _state.value.pendingAttachments) {
+            val entity = AttachmentEntity(
+                id = pending.id,
+                noteId = noteId,
+                fileName = pending.fileName,
+                mimeType = pending.mimeType,
+                filePath = pending.filePath,
+                createdAt = System.currentTimeMillis()
+            )
+            repo.insertAttachment(entity)
+        }
+        repo.deleteDraft()
+        _state.value = _state.value.copy(
+            textFieldValue = TextFieldValue(""),
+            isCommitting = false,
+            pendingAttachments = emptyList(),
+            disambiguationResult = null,
+            pendingText = "",
+            showFullFolderList = false,
+            allFolders = emptyList(),
+            snackbar = "Filed in \"${result.folder.name}\""
+        )
     }
 
     fun consumeSnackbar() {
@@ -367,6 +438,17 @@ fun NoteInputScreen(navController: NavHostController) {
             snackbarHost.showSnackbar(it)
             vm.consumeSnackbar()
         }
+    }
+
+    state.disambiguationResult?.let { result ->
+        FolderPickDialog(
+            candidates = result.candidates,
+            showFullList = state.showFullFolderList,
+            allFolders = state.allFolders,
+            onCandidateChosen = vm::onFolderChosen,
+            onShowFullList = vm::showFullFolderPicker,
+            onDismiss = vm::dismissDisambiguation
+        )
     }
 
     DisposableEffect(Unit) {
@@ -572,6 +654,103 @@ private fun startVoiceRecognition(transcriber: VoiceTranscriber, vm: NoteInputVi
         },
         onError = { message ->
             vm.onVoiceError(message)
+        }
+    )
+}
+
+@Composable
+private fun FolderPickDialog(
+    candidates: List<com.example.notebucket.sort.RoutingCandidate>,
+    showFullList: Boolean,
+    allFolders: List<Folder>,
+    onCandidateChosen: (String) -> Unit,
+    onShowFullList: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Where should this go?") },
+        text = {
+            if (showFullList) {
+                LazyColumn(modifier = Modifier.fillMaxWidth()) {
+                    items(allFolders, key = { it.id }) { folder ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onCandidateChosen(folder.id) }
+                                .padding(vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(12.dp)
+                                    .clip(CircleShape)
+                                    .background(FolderPalette.resolve(folder.color, isDark))
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Text(
+                                text = folder.name,
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                        }
+                    }
+                }
+            } else {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    candidates.forEach { candidate ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onCandidateChosen(candidate.folder.id) }
+                                .padding(vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(12.dp)
+                                    .clip(CircleShape)
+                                    .background(FolderPalette.resolve(candidate.folder.color, isDark))
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Text(
+                                text = candidate.folder.name,
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(4.dp))
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onShowFullList() }
+                            .padding(vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Folder,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(12.dp)
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            text = "Pick another folder",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
         }
     )
 }

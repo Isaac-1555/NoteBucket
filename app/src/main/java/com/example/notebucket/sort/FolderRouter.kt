@@ -16,6 +16,17 @@ data class AssignmentResult(
     val isNewFolder: Boolean
 )
 
+data class RoutingCandidate(
+    val folder: Folder,
+    val similarity: Float
+)
+
+data class RoutingResult(
+    val candidates: List<RoutingCandidate>,
+    val needsDisambiguation: Boolean,
+    val embedding: FloatArray
+)
+
 data class SearchResult(
     val note: Note,
     val similarity: Float
@@ -38,38 +49,88 @@ class FolderRouter @Inject constructor(
 
         Log.d(TAG, "commit: text='${text.take(60)}' norm=${sqrt(embedding.fold(0f) { a, v -> a + v * v })} first5=[${embedding.take(5).joinToString(",") { "%.4f".format(it) }}]")
 
-        if (URL_PATTERN.containsMatchIn(text)) {
-            val websites = repo.getFolderByName("Websites") ?: createFolder("Websites")
-            return assignToFolder(websites, text, embedding)
-        }
-
-        val folders = repo.getAllFolders()
-
-        if (folders.isEmpty()) {
-            val unsorted = createFolder("Unsorted")
-            return assignToFolder(unsorted, text, embedding)
-        }
-
-        val scored = folders.mapNotNull { folder ->
-            val nameEmb = folder.nameEmbedding ?: return@mapNotNull null
-            folder to cosine(embedding, nameEmb)
-        }
-
-        if (scored.isEmpty()) {
-            val unsorted = repo.getFolderByName("Unsorted") ?: createFolder("Unsorted")
-            return assignToFolder(unsorted, text, embedding)
-        }
-
-        val best = scored.maxByOrNull { it.second }!!
-        Log.d(TAG, "  best match: '${best.first.name}' sim=${"%.4f".format(best.second)}")
-
-        if (best.second >= threshold) {
+        val best = scoreFolders(embedding)
+        if (best != null && best.second >= threshold) {
             return assignToFolder(best.first, text, embedding, best.second)
         }
 
         val unsorted = repo.getFolderByName("Unsorted") ?: createFolder("Unsorted")
         Log.d(TAG, "  no match above threshold, assigning to Unsorted")
-        return assignToFolder(unsorted, text, embedding, best.second)
+        return assignToFolder(unsorted, text, embedding, best?.second ?: 0f)
+    }
+
+    suspend fun routeForDisplay(text: String): RoutingResult {
+        embedder.awaitLoaded()
+        val embedding = embedder.embedNote(text)
+
+        Log.d(TAG, "routeForDisplay: text='${text.take(60)}'")
+
+        val folders = repo.getAllFolders()
+        if (folders.isEmpty()) {
+            val unsorted = createFolder("Unsorted")
+            return RoutingResult(
+                candidates = listOf(RoutingCandidate(unsorted, 0f)),
+                needsDisambiguation = false,
+                embedding = embedding
+            )
+        }
+
+        val scored = folders.mapNotNull { folder ->
+            val nameEmb = folder.nameEmbedding ?: return@mapNotNull null
+            RoutingCandidate(folder, cosine(embedding, nameEmb))
+        }.sortedByDescending { it.similarity }
+
+        if (scored.isEmpty()) {
+            val unsorted = repo.getFolderByName("Unsorted") ?: createFolder("Unsorted")
+            return RoutingResult(
+                candidates = listOf(RoutingCandidate(unsorted, 0f)),
+                needsDisambiguation = false,
+                embedding = embedding
+            )
+        }
+
+        val best = scored[0]
+        val second = scored.getOrNull(1)
+
+        val aboveThreshold = best.similarity >= threshold
+        val ambiguous = second != null &&
+            aboveThreshold &&
+            (best.similarity - second.similarity) <= DISAMBIGUATION_MARGIN
+
+        Log.d(TAG, "  best='${best.folder.name}' sim=${"%.4f".format(best.similarity)}" +
+            (second?.let { " second='${it.folder.name}' sim=${"%.4f".format(it.similarity)}" } ?: "") +
+            " ambiguous=$ambiguous")
+
+        return RoutingResult(
+            candidates = scored.take(2),
+            needsDisambiguation = ambiguous,
+            embedding = embedding
+        )
+    }
+
+    suspend fun commitToFolder(
+        text: String,
+        folderId: String,
+        embedding: FloatArray
+    ): AssignmentResult {
+        val folder = repo.getFolder(folderId)
+            ?: repo.getFolderByName("Unsorted") ?: createFolder("Unsorted")
+        return assignToFolder(folder, text, embedding)
+    }
+
+    private suspend fun scoreFolders(embedding: FloatArray): Pair<Folder, Float>? {
+        val folders = repo.getAllFolders()
+        if (folders.isEmpty()) return null
+
+        val scored = folders.mapNotNull { folder ->
+            val nameEmb = folder.nameEmbedding ?: return@mapNotNull null
+            folder to cosine(embedding, nameEmb)
+        }
+        if (scored.isEmpty()) return null
+
+        val best = scored.maxByOrNull { it.second }!!
+        Log.d(TAG, "  best match: '${best.first.name}' sim=${"%.4f".format(best.second)}")
+        return best
     }
 
     suspend fun createFolder(name: String, color: String = "teal"): Folder {
@@ -212,6 +273,7 @@ class FolderRouter @Inject constructor(
     companion object {
         private const val TAG = "FolderRouter"
         const val DEFAULT_THRESHOLD = 0.55f
+        const val DISAMBIGUATION_MARGIN = 0.03f
         const val SEARCH_MIN_SIM = 0.35f
         const val SEARCH_RELATIVE_MARGIN = 0.25f
         private val URL_PATTERN = Regex("https?://\\S+|www\\.\\S+|[\\w-]+\\.[a-z]{2,}")
