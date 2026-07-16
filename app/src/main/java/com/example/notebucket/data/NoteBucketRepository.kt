@@ -94,8 +94,16 @@ class NoteBucketRepository @Inject constructor(
         folderDao.deleteById(folderId)
     }
 
+    suspend fun updateNote(note: Note) {
+        noteDao.updateTextAndEmbedding(note.id, note.text, note.embedding.toBytes(), note.timestamp)
+    }
+
     suspend fun deleteNote(noteId: String) {
         noteDao.deleteById(noteId)
+    }
+
+    suspend fun deleteNotes(noteIds: List<String>) {
+        noteDao.deleteBatch(noteIds)
     }
 
     suspend fun moveNote(noteId: String, newFolderId: String) {

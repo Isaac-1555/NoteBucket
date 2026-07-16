@@ -156,6 +156,15 @@ class FolderRouter @Inject constructor(
         repo.moveNote(noteId, newFolderId)
     }
 
+    suspend fun rewriteNote(noteId: String, newText: String, updateTimestamp: Boolean) {
+        val note = repo.getNote(noteId) ?: return
+        embedder.awaitLoaded()
+        val newEmbedding = embedder.embedNote(newText)
+        val newTimestamp = if (updateTimestamp) System.currentTimeMillis() else note.timestamp
+        val updated = note.copy(text = newText, embedding = newEmbedding, timestamp = newTimestamp)
+        repo.updateNote(updated)
+    }
+
     suspend fun deleteNote(noteId: String) {
         val note = repo.getNote(noteId) ?: return
         repo.deleteNote(noteId)
@@ -178,6 +187,19 @@ class FolderRouter @Inject constructor(
         val incoming = notes.filter { it.folderId != toFolderId }
         repo.updateNoteCount(toFolderId, targetNotes.size + incoming.size)
         repo.moveNotes(noteIds, toFolderId)
+    }
+
+    suspend fun bulkDelete(noteIds: List<String>) {
+        if (noteIds.isEmpty()) return
+        val notes = noteIds.mapNotNull { repo.getNote(it) }
+        if (notes.isEmpty()) return
+        val idSet = noteIds.toSet()
+        val byFolder = notes.groupBy { it.folderId }
+        for ((folderId, _) in byFolder) {
+            val remaining = repo.getNotesByFolder(folderId).filter { it.id !in idSet }
+            repo.updateNoteCount(folderId, remaining.size)
+        }
+        repo.deleteNotes(noteIds)
     }
 
     private fun cosine(a: FloatArray, b: FloatArray): Float {

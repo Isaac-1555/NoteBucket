@@ -141,6 +141,16 @@ class FolderDetailViewModel @Inject constructor(
         }
     }
 
+    fun deleteSelected(onDone: () -> Unit) {
+        val ids = _selectedIds.value.toList()
+        if (ids.isEmpty()) { onDone(); return }
+        viewModelScope.launch {
+            router.bulkDelete(ids)
+            exitSelectMode()
+            onDone()
+        }
+    }
+
     fun deleteFolder(onDone: () -> Unit) {
         viewModelScope.launch {
             repo.deleteFolder(folderId)
@@ -172,6 +182,7 @@ fun FolderDetailScreen(navController: NavHostController, folderId: String) {
     var showRenameDialog by remember { mutableStateOf(false) }
     var showDeleteFolderDialog by remember { mutableStateOf(false) }
     var showMoveDialog by remember { mutableStateOf(false) }
+    var showDeleteSelectedDialog by remember { mutableStateOf(false) }
     val isDark = isSystemInDarkTheme()
     val folderColor = remember(state.folder?.color, isDark) {
         FolderPalette.resolve(state.folder?.color ?: "teal", isDark)
@@ -212,6 +223,12 @@ fun FolderDetailScreen(navController: NavHostController, folderId: String) {
                             enabled = selectedIds.isNotEmpty()
                         ) {
                             Icon(Icons.AutoMirrored.Filled.DriveFileMove, contentDescription = stringResource(R.string.folder_detail_move_selected))
+                        }
+                        IconButton(
+                            onClick = { showDeleteSelectedDialog = true },
+                            enabled = selectedIds.isNotEmpty()
+                        ) {
+                            Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.folder_detail_delete_selected))
                         }
                     } else {
                         IconButton(onClick = { vm.enterSelectMode() }, enabled = state.notes.isNotEmpty()) {
@@ -350,6 +367,25 @@ fun FolderDetailScreen(navController: NavHostController, folderId: String) {
             confirmButton = {
                 TextButton(onClick = { showMoveDialog = false }) {
                     Text(stringResource(R.string.action_close))
+                }
+            }
+        )
+    }
+
+    if (showDeleteSelectedDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteSelectedDialog = false },
+            title = { Text(stringResource(R.string.folder_detail_delete_selected)) },
+            text = { Text(stringResource(R.string.folder_detail_delete_selected_confirm, selectedIds.size)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDeleteSelectedDialog = false
+                    vm.deleteSelected {}
+                }) { Text(stringResource(R.string.action_confirm)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteSelectedDialog = false }) {
+                    Text(stringResource(R.string.action_cancel))
                 }
             }
         )

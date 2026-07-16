@@ -19,11 +19,14 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -50,9 +53,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.SavedStateHandle
@@ -109,6 +115,13 @@ class NoteDetailViewModel @Inject constructor(
         }
     }
 
+    fun rewrite(newText: String, updateTimestamp: Boolean, onDone: () -> Unit) {
+        viewModelScope.launch {
+            router.rewriteNote(noteId, newText, updateTimestamp)
+            onDone()
+        }
+    }
+
     fun recategorize(newFolderId: String) {
         viewModelScope.launch { router.recategorize(noteId, newFolderId) }
     }
@@ -121,14 +134,35 @@ fun NoteDetailScreen(navController: NavHostController, noteId: String) {
     val state by vm.state.collectAsState()
     var showMoveDialog by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    var isEditing by remember { mutableStateOf(false) }
+    var editText by remember { mutableStateOf(TextFieldValue("")) }
+    var showTimestampDialog by remember { mutableStateOf(false) }
+    var pendingEditText by remember { mutableStateOf("") }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(R.string.note_detail_title)) },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back))
+                    IconButton(onClick = {
+                        if (isEditing) isEditing = false else navController.popBackStack()
+                    }) {
+                        Icon(
+                            if (isEditing) Icons.Default.Close else Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.action_back)
+                        )
+                    }
+                },
+                actions = {
+                    if (!isEditing) {
+                        IconButton(onClick = {
+                            state.note?.let {
+                                editText = TextFieldValue(it.text)
+                                isEditing = true
+                            }
+                        }) {
+                            Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.note_detail_edit))
+                        }
                     }
                 }
             )
@@ -144,6 +178,42 @@ fun NoteDetailScreen(navController: NavHostController, noteId: String) {
                 contentAlignment = androidx.compose.ui.Alignment.Center
             ) {
                 Text("Note not found.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        } else if (isEditing) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(horizontal = 24.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                BasicTextField(
+                    value = editText,
+                    onValueChange = { editText = it },
+                    textStyle = TextStyle(
+                        fontSize = 17.sp,
+                        lineHeight = 26.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    ),
+                    cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                Button(
+                    onClick = {
+                        pendingEditText = editText.text.trim()
+                        if (pendingEditText.isNotBlank()) {
+                            showTimestampDialog = true
+                        }
+                    },
+                    enabled = editText.text.trim().isNotBlank(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp),
+                    shape = RoundedCornerShape(50)
+                ) {
+                    Text(stringResource(R.string.action_save), style = MaterialTheme.typography.titleMedium)
+                }
             }
         } else {
             Column(
@@ -239,6 +309,26 @@ fun NoteDetailScreen(navController: NavHostController, noteId: String) {
                 }
             }
         }
+    }
+
+    if (showTimestampDialog) {
+        AlertDialog(
+            onDismissRequest = { showTimestampDialog = false },
+            title = { Text(stringResource(R.string.note_detail_update_timestamp)) },
+            text = { Text(stringResource(R.string.note_detail_rewrite)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showTimestampDialog = false
+                    vm.rewrite(pendingEditText, updateTimestamp = true) { navController.popBackStack() }
+                }) { Text(stringResource(R.string.note_detail_update_timestamp_yes)) }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showTimestampDialog = false
+                    vm.rewrite(pendingEditText, updateTimestamp = false) { navController.popBackStack() }
+                }) { Text(stringResource(R.string.note_detail_update_timestamp_no)) }
+            }
+        )
     }
 
     if (showDeleteConfirm) {

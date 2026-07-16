@@ -20,13 +20,19 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Checklist
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SelectAll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -61,6 +67,7 @@ import androidx.navigation.NavHostController
 import com.example.notebucket.R
 import com.example.notebucket.data.NoteBucketRepository
 import com.example.notebucket.sort.Folder
+import com.example.notebucket.sort.FolderRouter
 import com.example.notebucket.sort.SearchResult
 import com.example.notebucket.ui.nav.Routes
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -99,11 +106,17 @@ data class SearchUiState(
 @HiltViewModel
 class SearchViewModel @Inject constructor(
     private val repo: NoteBucketRepository,
-    private val router: com.example.notebucket.sort.FolderRouter
+    private val router: FolderRouter
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(SearchUiState())
     val state: StateFlow<SearchUiState> = _state.asStateFlow()
+
+    private val _isSelectMode = MutableStateFlow(false)
+    val isSelectMode: StateFlow<Boolean> = _isSelectMode.asStateFlow()
+
+    private val _selectedIds = MutableStateFlow<Set<String>>(emptySet())
+    val selectedIds: StateFlow<Set<String>> = _selectedIds.asStateFlow()
 
     val folders: StateFlow<List<Folder>> =
         repo.observeFolders().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -183,6 +196,28 @@ class SearchViewModel @Inject constructor(
             }
         }
     }
+
+    fun enterSelectMode() { _isSelectMode.value = true }
+    fun exitSelectMode() { _isSelectMode.value = false; _selectedIds.value = emptySet() }
+    fun toggleSelection(id: String) {
+        _selectedIds.value = _selectedIds.value.toMutableSet().also {
+            if (!it.add(id)) it.remove(id)
+        }
+    }
+    fun selectAll() {
+        _selectedIds.value = _state.value.results.map { it.note.id }.toSet()
+    }
+    fun deleteSelected(onDone: () -> Unit) {
+        val ids = _selectedIds.value.toList()
+        if (ids.isEmpty()) { onDone(); return }
+        viewModelScope.launch {
+            router.bulkDelete(ids)
+            val remaining = _state.value.results.filter { it.note.id !in _selectedIds.value }
+            _state.value = _state.value.copy(results = remaining, resultCount = remaining.size)
+            exitSelectMode()
+            onDone()
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -191,19 +226,52 @@ fun SearchScreen(navController: NavHostController) {
     val vm: SearchViewModel = hiltViewModel()
     val state by vm.state.collectAsState()
     val folders by vm.folders.collectAsState()
+    val isSelectMode by vm.isSelectMode.collectAsState()
+    val selectedIds by vm.selectedIds.collectAsState()
 
     var showFromPicker by remember { mutableStateOf(false) }
     var showToPicker by remember { mutableStateOf(false) }
+    var showDeleteSelectedDialog by remember { mutableStateOf(false) }
 
     val dateFormat = remember { SimpleDateFormat("MMM d, yyyy", Locale.getDefault()) }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.search_title)) },
+                title = {
+                    if (isSelectMode) {
+                        Text(stringResource(R.string.search_selected_count, selectedIds.size))
+                    } else {
+                        Text(stringResource(R.string.search_title))
+                    }
+                },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back))
+                    IconButton(onClick = {
+                        if (isSelectMode) vm.exitSelectMode() else navController.popBackStack()
+                    }) {
+                        Icon(
+                            if (isSelectMode) Icons.Default.Close else Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.action_back)
+                        )
+                    }
+                },
+                actions = {
+                    if (isSelectMode) {
+                        IconButton(onClick = { vm.selectAll() }) {
+                            Icon(Icons.Default.SelectAll, contentDescription = stringResource(R.string.search_select_all))
+                        }
+                        IconButton(
+                            onClick = { showDeleteSelectedDialog = true },
+                            enabled = selectedIds.isNotEmpty()
+                        ) {
+                            Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.search_delete_selected))
+                        }
+                    } else {
+                        if (state.results.isNotEmpty()) {
+                            IconButton(onClick = { vm.enterSelectMode() }) {
+                                Icon(Icons.Default.Checklist, contentDescription = stringResource(R.string.search_select))
+                            }
+                        }
                     }
                 }
             )
@@ -408,7 +476,12 @@ fun SearchScreen(navController: NavHostController) {
                         SearchResultCard(
                             text = result.note.text,
                             folderName = folderName,
-                            onClick = { navController.navigate(Routes.noteDetail(result.note.id)) }
+                            isSelected = result.note.id in selectedIds,
+                            isSelectMode = isSelectMode,
+                            onClick = {
+                                if (isSelectMode) vm.toggleSelection(result.note.id)
+                                else navController.navigate(Routes.noteDetail(result.note.id))
+                            }
                         )
                     }
                     if (state.results.isEmpty() && !state.isSearching) {
@@ -424,6 +497,25 @@ fun SearchScreen(navController: NavHostController) {
                 }
             }
         }
+    }
+
+    if (showDeleteSelectedDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteSelectedDialog = false },
+            title = { Text(stringResource(R.string.search_delete_selected)) },
+            text = { Text(stringResource(R.string.search_delete_selected_confirm, selectedIds.size)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDeleteSelectedDialog = false
+                    vm.deleteSelected {}
+                }) { Text(stringResource(R.string.action_confirm)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteSelectedDialog = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        )
     }
 
     // ── Date Picker Dialogs ──────────────────────────────────────────
@@ -480,6 +572,8 @@ fun SearchScreen(navController: NavHostController) {
 private fun SearchResultCard(
     text: String,
     folderName: String,
+    isSelected: Boolean = false,
+    isSelectMode: Boolean = false,
     onClick: () -> Unit
 ) {
     Card(
@@ -487,25 +581,36 @@ private fun SearchResultCard(
             .fillMaxWidth()
             .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer
+            containerColor = if (isSelected)
+                MaterialTheme.colorScheme.primaryContainer
+            else
+                MaterialTheme.colorScheme.secondaryContainer
         )
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Text(
-                text = text,
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = folderName,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.Top) {
+            if (isSelectMode) {
+                Checkbox(
+                    checked = isSelected,
+                    onCheckedChange = { onClick() }
                 )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = text,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = folderName,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }

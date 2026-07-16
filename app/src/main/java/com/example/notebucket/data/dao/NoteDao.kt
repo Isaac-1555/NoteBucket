@@ -37,8 +37,14 @@ interface NoteDao {
     @Query("UPDATE notes SET folderId = :folderId WHERE id IN (:ids)")
     suspend fun moveBatch(ids: List<String>, folderId: String)
 
+    @Query("UPDATE notes SET text = :text, embedding = :embedding, timestamp = :timestamp WHERE id = :id")
+    suspend fun updateTextAndEmbedding(id: String, text: String, embedding: ByteArray, timestamp: Long)
+
     @Query("DELETE FROM notes WHERE id = :id")
     suspend fun deleteById(id: String)
+
+    @Query("DELETE FROM notes WHERE id IN (:ids)")
+    suspend fun deleteBatch(ids: List<String>)
 
     @Query("DELETE FROM notes")
     suspend fun clear()
