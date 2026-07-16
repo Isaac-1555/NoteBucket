@@ -3,6 +3,7 @@ package com.example.notebucket.di
 import android.content.Context
 import androidx.room.Room
 import com.example.notebucket.data.NoteBucketDatabase
+import com.example.notebucket.data.dao.AttachmentDao
 import com.example.notebucket.data.dao.DraftDao
 import com.example.notebucket.data.dao.FolderDao
 import com.example.notebucket.data.dao.NoteDao
@@ -32,4 +33,7 @@ object DatabaseModule {
 
     @Provides
     fun provideDraftDao(db: NoteBucketDatabase): DraftDao = db.draftDao()
+
+    @Provides
+    fun provideAttachmentDao(db: NoteBucketDatabase): AttachmentDao = db.attachmentDao()
 }

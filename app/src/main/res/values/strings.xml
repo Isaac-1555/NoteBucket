@@ -17,8 +17,7 @@
     <string name="home_create_folder">Create folder</string>
 
     <string name="noteinput_title">New note</string>
-    <string name="noteinput_hint">Type or paste a note. Done sorts it into a folder.</string>
-    <string name="noteinput_done">Done</string>
+    <string name="noteinput_done">Save</string>
     <string name="noteinput_draft_restored">Restored your last draft.</string>
     <string name="noteinput_assigned">Filed in \"%1$s\"</string>
     <string name="noteinput_new_folder">Created folder \"%1$s\"</string>

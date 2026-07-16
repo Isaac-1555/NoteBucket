@@ -1,9 +1,11 @@
 package com.example.notebucket.data
 
+import com.example.notebucket.data.dao.AttachmentDao
 import com.example.notebucket.data.dao.DraftDao
 import com.example.notebucket.data.dao.FolderCount
 import com.example.notebucket.data.dao.FolderDao
 import com.example.notebucket.data.dao.NoteDao
+import com.example.notebucket.data.entity.AttachmentEntity
 import com.example.notebucket.data.entity.DraftEntity
 import com.example.notebucket.data.mapper.toBytes
 import com.example.notebucket.data.mapper.toDomain
@@ -19,7 +21,8 @@ import javax.inject.Singleton
 class NoteBucketRepository @Inject constructor(
     private val folderDao: FolderDao,
     private val noteDao: NoteDao,
-    private val draftDao: DraftDao
+    private val draftDao: DraftDao,
+    private val attachmentDao: AttachmentDao
 ) {
 
     fun observeFolders(): Flow<List<Folder>> =
@@ -110,5 +113,24 @@ class NoteBucketRepository @Inject constructor(
         noteDao.clear()
         folderDao.clear()
         draftDao.delete()
+        attachmentDao.clear()
+    }
+
+    fun observeAttachments(noteId: String): Flow<List<AttachmentEntity>> =
+        attachmentDao.observeByNote(noteId)
+
+    suspend fun getAttachments(noteId: String): List<AttachmentEntity> =
+        attachmentDao.getByNote(noteId)
+
+    suspend fun insertAttachment(attachment: AttachmentEntity) {
+        attachmentDao.upsert(attachment)
+    }
+
+    suspend fun deleteAttachment(id: String) {
+        attachmentDao.deleteById(id)
+    }
+
+    suspend fun deleteAttachmentsForNote(noteId: String) {
+        attachmentDao.deleteByNote(noteId)
     }
 }

@@ -1,19 +1,28 @@
 package com.example.notebucket.ui.screens
 
+import android.content.Intent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items as listItems
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material3.AlertDialog
@@ -35,17 +44,25 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.navigation.NavHostController
+import coil.compose.AsyncImage
 import com.example.notebucket.R
 import com.example.notebucket.data.NoteBucketRepository
+import com.example.notebucket.data.entity.AttachmentEntity
 import com.example.notebucket.sort.Folder
 import com.example.notebucket.sort.FolderRouter
 import com.example.notebucket.sort.Note
@@ -56,12 +73,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.io.File
 import javax.inject.Inject
 
 data class NoteDetailUiState(
     val note: Note? = null,
     val folder: Folder? = null,
-    val allFolders: List<Folder> = emptyList()
+    val allFolders: List<Folder> = emptyList(),
+    val attachments: List<AttachmentEntity> = emptyList()
 )
 
 @HiltViewModel
@@ -74,11 +93,12 @@ class NoteDetailViewModel @Inject constructor(
     private val noteId: String = savedState.get<String>(Routes.NOTE_DETAIL_ARG).orEmpty()
 
     val state: StateFlow<NoteDetailUiState> =
-        combine(repo.observeNote(noteId), repo.observeFolders()) { note, folders ->
+        combine(repo.observeNote(noteId), repo.observeFolders(), repo.observeAttachments(noteId)) { note, folders, attachments ->
             NoteDetailUiState(
                 note = note,
                 folder = folders.find { it.id == note?.folderId },
-                allFolders = folders
+                allFolders = folders,
+                attachments = attachments
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), NoteDetailUiState())
 
@@ -145,6 +165,32 @@ fun NoteDetailScreen(navController: NavHostController, noteId: String) {
                         style = MaterialTheme.typography.bodyLarge,
                         modifier = Modifier.padding(16.dp)
                     )
+                }
+
+                if (state.attachments.isNotEmpty()) {
+                    val imageAttachments = state.attachments.filter { it.mimeType.startsWith("image/") }
+                    val fileAttachments = state.attachments.filter { !it.mimeType.startsWith("image/") }
+
+                    if (imageAttachments.isNotEmpty()) {
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(imageAttachments, key = { it.id }) { attachment ->
+                                AsyncImage(
+                                    model = File(attachment.filePath),
+                                    contentDescription = attachment.fileName,
+                                    modifier = Modifier
+                                        .size(200.dp)
+                                        .clip(RoundedCornerShape(12.dp)),
+                                    contentScale = ContentScale.Crop
+                                )
+                            }
+                        }
+                    }
+
+                    fileAttachments.forEach { attachment ->
+                        FileAttachmentCard(attachment = attachment)
+                    }
                 }
 
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -247,5 +293,58 @@ fun NoteDetailScreen(navController: NavHostController, noteId: String) {
                 }
             }
         )
+    }
+}
+
+@Composable
+private fun FileAttachmentCard(attachment: AttachmentEntity) {
+    val context = LocalContext.current
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable {
+                try {
+                    val uri = FileProvider.getUriForFile(
+                        context,
+                        "${context.packageName}.fileprovider",
+                        File(attachment.filePath)
+                    )
+                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                        setDataAndType(uri, attachment.mimeType)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    context.startActivity(intent)
+                } catch (_: Exception) {}
+            },
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Default.AttachFile,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(24.dp)
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = attachment.fileName,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = attachment.mimeType,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
     }
 }
