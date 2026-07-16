@@ -4,6 +4,7 @@ import com.example.notebucket.data.dao.DraftDao
 import com.example.notebucket.data.dao.FolderDao
 import com.example.notebucket.data.dao.NoteDao
 import com.example.notebucket.data.entity.DraftEntity
+import com.example.notebucket.data.mapper.toBytes
 import com.example.notebucket.data.mapper.toDomain
 import com.example.notebucket.data.mapper.toEntity
 import com.example.notebucket.sort.Folder
@@ -49,6 +50,8 @@ class NoteBucketRepository @Inject constructor(
 
     suspend fun getFolder(id: String): Folder? = folderDao.getById(id)?.toDomain()
 
+    suspend fun getFolderByName(name: String): Folder? = folderDao.getByName(name)?.toDomain()
+
     suspend fun getNote(id: String): Note? = noteDao.getById(id)?.toDomain()
 
     suspend fun getAllNotes(): List<Note> = noteDao.getAll().map { it.toDomain() }
@@ -64,8 +67,12 @@ class NoteBucketRepository @Inject constructor(
         noteDao.upsert(note.toEntity())
     }
 
-    suspend fun updateFolderCentroid(folderId: String, centroid: FloatArray, noteCount: Int) {
-        folderDao.updateCentroid(folderId, centroid.toEntityBytes(), noteCount)
+    suspend fun updateFolderEmbedding(folderId: String, embedding: FloatArray) {
+        folderDao.updateEmbedding(folderId, embedding.toBytes())
+    }
+
+    suspend fun updateNoteCount(folderId: String, noteCount: Int) {
+        folderDao.updateNoteCount(folderId, noteCount)
     }
 
     suspend fun renameFolder(folderId: String, newName: String) {
@@ -84,6 +91,10 @@ class NoteBucketRepository @Inject constructor(
         noteDao.move(noteId, newFolderId)
     }
 
+    suspend fun moveNotes(noteIds: List<String>, newFolderId: String) {
+        noteDao.moveBatch(noteIds, newFolderId)
+    }
+
     suspend fun noteCount(): Int = noteDao.count()
     suspend fun folderCount(): Int = folderDao.count()
 
@@ -91,11 +102,5 @@ class NoteBucketRepository @Inject constructor(
         noteDao.clear()
         folderDao.clear()
         draftDao.delete()
-    }
-
-    private fun FloatArray.toEntityBytes(): ByteArray {
-        val buffer = java.nio.ByteBuffer.allocate(size * 4).order(java.nio.ByteOrder.LITTLE_ENDIAN)
-        buffer.asFloatBuffer().put(this)
-        return buffer.array()
     }
 }

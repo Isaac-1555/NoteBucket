@@ -222,7 +222,6 @@ fun SearchScreen(navController: NavHostController) {
                         SearchResultCard(
                             text = result.note.text,
                             folderName = folderName,
-                            similarity = result.similarity,
                             onClick = { navController.navigate(Routes.noteDetail(result.note.id)) }
                         )
                     }
@@ -246,7 +245,6 @@ fun SearchScreen(navController: NavHostController) {
 private fun SearchResultCard(
     text: String,
     folderName: String,
-    similarity: Float,
     onClick: () -> Unit
 ) {
     Card(
@@ -270,11 +268,6 @@ private fun SearchResultCard(
             ) {
                 Text(
                     text = folderName,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = "sim=${"%.3f".format(similarity)}",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

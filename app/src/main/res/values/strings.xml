@@ -14,6 +14,7 @@
     <string name="home_search_hint">Search notes…</string>
     <string name="home_empty">No folders yet. Tap + to add your first note.</string>
     <string name="home_new_note">New note</string>
+    <string name="home_create_folder">Create folder</string>
 
     <string name="noteinput_title">New note</string>
     <string name="noteinput_hint">Type or paste a note. Done sorts it into a folder.</string>
@@ -25,6 +26,13 @@
     <string name="folder_detail_rename">Rename folder</string>
     <string name="folder_detail_delete_note">Delete note</string>
     <string name="folder_detail_empty">No notes in this folder yet.</string>
+    <string name="folder_detail_delete_folder">Delete folder</string>
+    <string name="folder_detail_delete_folder_nonempty">Cannot delete folder: it has %1$d note(s). Move or delete them first.</string>
+    <string name="folder_detail_delete_folder_confirm">Delete this empty folder? This cannot be undone.</string>
+    <string name="folder_detail_select">Select notes</string>
+    <string name="folder_detail_select_all">Select all</string>
+    <string name="folder_detail_move_selected">Move selected</string>
+    <string name="folder_detail_selected_count">%1$d selected</string>
 
     <string name="search_title">Search</string>
     <string name="search_hint">What are you looking for?</string>
@@ -36,6 +44,10 @@
     <string name="settings_title">Settings</string>
     <string name="settings_threshold">Folder sensitivity (threshold)</string>
     <string name="settings_threshold_help">Higher = more folders (strict match). Lower = fewer folders (loose match). Default 0.55.</string>
+    <string name="settings_section_storage">Storage</string>
+    <string name="settings_section_model">Model</string>
+    <string name="settings_section_clear">Clear all data</string>
+    <string name="settings_section_advanced">Advanced</string>
     <string name="settings_storage">Storage</string>
     <string name="settings_storage_notes">Notes: %1$d</string>
     <string name="settings_storage_folders">Folders: %1$d</string>
@@ -61,7 +73,11 @@
     <string name="action_cancel">Cancel</string>
     <string name="action_save">Save</string>
     <string name="action_confirm">Confirm</string>
+    <string name="action_create">Create</string>
     <string name="action_search">Search</string>
+
+    <string name="create_folder_title">Create folder</string>
+    <string name="create_folder_hint">Folder name</string>
 
     <string name="common_loading">Loading…</string>
     <string name="common_error">Error: %1$s</string>

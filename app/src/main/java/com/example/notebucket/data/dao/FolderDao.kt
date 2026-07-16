@@ -25,11 +25,17 @@ interface FolderDao {
     @Query("SELECT * FROM folders WHERE id = :id")
     suspend fun getById(id: String): FolderEntity?
 
+    @Query("SELECT * FROM folders WHERE name = :name COLLATE NOCASE LIMIT 1")
+    suspend fun getByName(name: String): FolderEntity?
+
     @Query("UPDATE folders SET name = :name, isUserRenamed = 1 WHERE id = :id")
     suspend fun rename(id: String, name: String)
 
-    @Query("UPDATE folders SET centroid = :centroid, noteCount = :count WHERE id = :id")
-    suspend fun updateCentroid(id: String, centroid: ByteArray, count: Int)
+    @Query("UPDATE folders SET nameEmbedding = :embedding WHERE id = :id")
+    suspend fun updateEmbedding(id: String, embedding: ByteArray)
+
+    @Query("UPDATE folders SET noteCount = :count WHERE id = :id")
+    suspend fun updateNoteCount(id: String, count: Int)
 
     @Query("DELETE FROM folders WHERE id = :id")
     suspend fun deleteById(id: String)

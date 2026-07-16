@@ -11,10 +11,20 @@ static const char* TAG = "bge-jni";
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
 
+static int g_backend_ref = 0;
+
 static llama_model*        g_model  = nullptr;
 static llama_context*      g_ctx    = nullptr;
 static const llama_vocab*  g_vocab  = nullptr;
 static int32_t             g_n_embd = 0;
+
+static void backend_init() {
+    if (g_backend_ref++ == 0) llama_backend_init();
+}
+
+static void backend_free() {
+    if (--g_backend_ref == 0) llama_backend_free();
+}
 
 extern "C" {
 
@@ -26,13 +36,13 @@ Java_com_example_notebucket_ai_NativeBridge_loadModel(
     if (!path) return JNI_FALSE;
 
     if (g_model != nullptr) {
-        LOGI("Model already loaded, unloading first");
+        LOGI("Embed model already loaded, unloading first");
         if (g_ctx) { llama_free(g_ctx); g_ctx = nullptr; }
         llama_model_free(g_model);
         g_model = nullptr;
     }
 
-    llama_backend_init();
+    backend_init();
 
     llama_model_params mparams = llama_model_default_params();
     mparams.n_gpu_layers = 0;
@@ -41,13 +51,14 @@ Java_com_example_notebucket_ai_NativeBridge_loadModel(
     env->ReleaseStringUTFChars(jpath, path);
 
     if (!g_model) {
-        LOGE("Failed to load model from file");
+        LOGE("Failed to load embed model from file");
+        backend_free();
         return JNI_FALSE;
     }
 
     g_vocab  = llama_model_get_vocab(g_model);
     g_n_embd = llama_model_n_embd(g_model);
-    LOGI("Model loaded: n_embd=%d", g_n_embd);
+    LOGI("Embed model loaded: n_embd=%d", g_n_embd);
 
     llama_context_params cparams = llama_context_default_params();
     cparams.n_ctx            = 512;
@@ -62,13 +73,14 @@ Java_com_example_notebucket_ai_NativeBridge_loadModel(
 
     g_ctx = llama_init_from_model(g_model, cparams);
     if (!g_ctx) {
-        LOGE("Failed to create context");
+        LOGE("Failed to create embed context");
         llama_model_free(g_model);
         g_model = nullptr;
+        backend_free();
         return JNI_FALSE;
     }
 
-    LOGI("Context created, pooling=%d", (int) llama_pooling_type(g_ctx));
+    LOGI("Embed context created, pooling=%d", (int) llama_pooling_type(g_ctx));
     return JNI_TRUE;
 }
 
@@ -80,8 +92,8 @@ Java_com_example_notebucket_ai_NativeBridge_unloadModel(
     if (g_model) { llama_model_free(g_model); g_model = nullptr; }
     g_vocab  = nullptr;
     g_n_embd = 0;
-    llama_backend_free();
-    LOGI("Model unloaded");
+    backend_free();
+    LOGI("Embed model unloaded");
 }
 
 JNIEXPORT jboolean JNICALL
@@ -95,7 +107,7 @@ Java_com_example_notebucket_ai_NativeBridge_embed(
         JNIEnv* env, jobject /*thiz*/, jstring jtext) {
 
     if (!g_ctx || !g_model || !g_vocab || g_n_embd <= 0) {
-        LOGE("Model not loaded");
+        LOGE("Embed model not loaded");
         return nullptr;
     }
 

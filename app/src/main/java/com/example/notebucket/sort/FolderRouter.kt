@@ -38,63 +38,81 @@ class FolderRouter @Inject constructor(
 
         Log.d(TAG, "commit: text='${text.take(60)}' norm=${sqrt(embedding.fold(0f) { a, v -> a + v * v })} first5=[${embedding.take(5).joinToString(",") { "%.4f".format(it) }}]")
 
+        if (URL_PATTERN.containsMatchIn(text)) {
+            val websites = repo.getFolderByName("Websites") ?: createFolder("Websites")
+            return assignToFolder(websites, text, embedding)
+        }
+
         val folders = repo.getAllFolders()
-        var bestFolder: Folder? = null
-        var bestSim = -1f
 
-        for (folder in folders) {
-            val centroid = folder.centroid
-            if (centroid == null) {
-                Log.d(TAG, "  vs folder '${folder.name}' (n=${folder.noteCount}) CENTROID NULL — skipped")
-                continue
-            }
-            val sim = cosine(embedding, centroid)
-            Log.d(TAG, "  vs folder '${folder.name}' (n=${folder.noteCount}) sim=${"%.4f".format(sim)} centroidFirst5=[${centroid.take(5).joinToString(",") { "%.4f".format(it) }}]")
-            if (sim > bestSim) {
-                bestSim = sim
-                bestFolder = folder
-            }
+        if (folders.isEmpty()) {
+            val unsorted = createFolder("Unsorted")
+            return assignToFolder(unsorted, text, embedding)
         }
 
-        Log.d(TAG, "  bestSim=${"%.4f".format(bestSim)} threshold=${"%.4f".format(threshold)} -> ${if (bestFolder != null && bestSim >= threshold) "ASSIGN to '${bestFolder.name}'" else "NEW FOLDER"}")
-
-        return if (bestFolder != null && bestSim >= threshold) {
-            val updated = updateCentroid(bestFolder.centroid!!, embedding, bestFolder.noteCount)
-            repo.updateFolderCentroid(bestFolder.id, updated, bestFolder.noteCount + 1)
-            val note = Note(
-                id = newNoteId(),
-                text = text,
-                embedding = embedding,
-                folderId = bestFolder.id,
-                timestamp = System.currentTimeMillis()
-            )
-            repo.insertNote(note)
-            val updatedFolder = bestFolder.copy(centroid = updated, noteCount = bestFolder.noteCount + 1)
-            Log.d(TAG, "  ASSIGN to '${bestFolder.name}' sim=${"%.4f".format(bestSim)}")
-            AssignmentResult(note, updatedFolder, bestSim, isNewFolder = false)
-        } else {
-            val crudeName = keyBertName(text, embedding)
-            val newFolder = Folder(
-                id = newFolderId(),
-                name = crudeName,
-                centroid = embedding.copyOf(),
-                noteCount = 0,
-                isUserRenamed = false
-            )
-            repo.insertFolder(newFolder)
-            val note = Note(
-                id = newNoteId(),
-                text = text,
-                embedding = embedding,
-                folderId = newFolder.id,
-                timestamp = System.currentTimeMillis()
-            )
-            repo.insertNote(note)
-            repo.updateFolderCentroid(newFolder.id, embedding.copyOf(), 1)
-            val finalFolder = newFolder.copy(noteCount = 1)
-            Log.d(TAG, "  NEW FOLDER '$crudeName'")
-            AssignmentResult(note, finalFolder, 1f, isNewFolder = true)
+        val scored = folders.mapNotNull { folder ->
+            val nameEmb = folder.nameEmbedding ?: return@mapNotNull null
+            folder to cosine(embedding, nameEmb)
         }
+
+        if (scored.isEmpty()) {
+            val unsorted = repo.getFolderByName("Unsorted") ?: createFolder("Unsorted")
+            return assignToFolder(unsorted, text, embedding)
+        }
+
+        val best = scored.maxByOrNull { it.second }!!
+        Log.d(TAG, "  best match: '${best.first.name}' sim=${"%.4f".format(best.second)}")
+
+        if (best.second >= threshold) {
+            return assignToFolder(best.first, text, embedding, best.second)
+        }
+
+        val unsorted = repo.getFolderByName("Unsorted") ?: createFolder("Unsorted")
+        Log.d(TAG, "  no match above threshold, assigning to Unsorted")
+        return assignToFolder(unsorted, text, embedding, best.second)
+    }
+
+    suspend fun createFolder(name: String): Folder {
+        embedder.awaitLoaded()
+        val nameEmb = embedder.embedNote(name)
+        val folder = Folder(
+            id = newFolderId(),
+            name = name,
+            nameEmbedding = nameEmb,
+            noteCount = 0,
+            isUserRenamed = false
+        )
+        repo.insertFolder(folder)
+        Log.d(TAG, "NEW FOLDER '$name'")
+        return folder
+    }
+
+    suspend fun renameFolder(folderId: String, newName: String) {
+        embedder.awaitLoaded()
+        val nameEmb = embedder.embedNote(newName)
+        repo.renameFolder(folderId, newName)
+        repo.updateFolderEmbedding(folderId, nameEmb)
+    }
+
+    private suspend fun assignToFolder(
+        folder: Folder,
+        text: String,
+        embedding: FloatArray,
+        sim: Float = 0f
+    ): AssignmentResult {
+        val note = Note(
+            id = newNoteId(),
+            text = text,
+            embedding = embedding,
+            folderId = folder.id,
+            timestamp = System.currentTimeMillis()
+        )
+        repo.insertNote(note)
+        val newCount = folder.noteCount + 1
+        repo.updateNoteCount(folder.id, newCount)
+        val updatedFolder = folder.copy(noteCount = newCount)
+        Log.d(TAG, "  ASSIGN to '${folder.name}' sim=${"%.4f".format(sim)}")
+        return AssignmentResult(note, updatedFolder, sim, isNewFolder = false)
     }
 
     suspend fun search(
@@ -112,10 +130,12 @@ class FolderRouter @Inject constructor(
                 (dateTo == null || n.timestamp <= dateTo)
         }
         if (notes.isEmpty()) return emptyList()
-        return notes
+        val ranked = notes
             .map { SearchResult(it, cosine(qEmb, it.embedding)) }
             .sortedByDescending { it.similarity }
-            .take(topK)
+        val topSim = ranked.first().similarity
+        val floor = maxOf(SEARCH_MIN_SIM, topSim - SEARCH_RELATIVE_MARGIN)
+        return ranked.filter { it.similarity >= floor }.take(topK)
     }
 
     suspend fun recategorize(noteId: String, newFolderId: String) {
@@ -125,81 +145,38 @@ class FolderRouter @Inject constructor(
         val oldFolder = repo.getFolder(note.folderId)
         if (oldFolder != null) {
             val remaining = repo.getNotesByFolder(oldFolder.id).filter { it.id != noteId }
-            val dim = note.embedding.size
-            val newOldCentroid = if (remaining.isEmpty()) FloatArray(dim) else average(remaining.map { it.embedding })
-            repo.updateFolderCentroid(oldFolder.id, newOldCentroid, remaining.size)
+            repo.updateNoteCount(oldFolder.id, remaining.size)
         }
 
         val newFolder = repo.getFolder(newFolderId)
         if (newFolder != null) {
-            val dim = note.embedding.size
-            val existingCentroid = newFolder.centroid
-            val newCentroid = if (existingCentroid == null || newFolder.noteCount == 0) {
-                note.embedding.copyOf()
-            } else {
-                val n = newFolder.noteCount
-                val updated = FloatArray(dim)
-                for (i in updated.indices) updated[i] = (existingCentroid[i] * n + note.embedding[i]) / (n + 1)
-                normalize(updated)
-                updated
-            }
-            repo.updateFolderCentroid(newFolderId, newCentroid, newFolder.noteCount + 1)
+            repo.updateNoteCount(newFolderId, newFolder.noteCount + 1)
         }
         repo.moveNote(noteId, newFolderId)
     }
 
-    private fun updateCentroid(old: FloatArray, newEmb: FloatArray, n: Int): FloatArray {
-        val updated = FloatArray(old.size)
-        for (i in old.indices) updated[i] = (old[i] * n + newEmb[i]) / (n + 1)
-        return normalize(updated)
+    suspend fun deleteNote(noteId: String) {
+        val note = repo.getNote(noteId) ?: return
+        repo.deleteNote(noteId)
+        val remaining = repo.getNotesByFolder(note.folderId)
+        repo.updateNoteCount(note.folderId, remaining.size)
     }
 
-    private fun average(embeddings: List<FloatArray>): FloatArray {
-        if (embeddings.isEmpty()) return FloatArray(0)
-        val dim = embeddings.first().size
-        val out = FloatArray(dim)
-        for (e in embeddings) {
-            for (i in 0 until dim) out[i] += e[i]
+    suspend fun bulkMove(noteIds: List<String>, toFolderId: String) {
+        if (noteIds.isEmpty()) return
+        val notes = noteIds.mapNotNull { repo.getNote(it) }
+        if (notes.isEmpty()) return
+        val idSet = noteIds.toSet()
+        val bySource = notes.groupBy { it.folderId }
+        for ((fromFolderId, _) in bySource) {
+            if (fromFolderId == toFolderId) continue
+            val remaining = repo.getNotesByFolder(fromFolderId).filter { it.id !in idSet }
+            repo.updateNoteCount(fromFolderId, remaining.size)
         }
-        for (i in out.indices) out[i] /= embeddings.size
-        return normalize(out)
-    }
-
-    private fun normalize(v: FloatArray): FloatArray {
-        val norm = sqrt(v.fold(0f) { acc, x -> acc + x * x })
-        if (norm > 0f) for (i in v.indices) v[i] /= norm
-        return v
-    }
-
-    private suspend fun keyBertName(text: String, noteEmb: FloatArray): String {
-        val candidates = extractCandidatePhrases(text)
-        if (candidates.isEmpty()) {
-            val words = text.trim().split(Regex("\\s+")).take(3)
-            return words.joinToString(" ").ifBlank { "New Folder" }
-        }
-        var bestPhrase = candidates.first()
-        var bestSim = -1f
-        for (phrase in candidates.take(5)) {
-            val phraseEmb = embedder.embedNote(phrase)
-            val sim = cosine(noteEmb, phraseEmb)
-            if (sim > bestSim) {
-                bestSim = sim
-                bestPhrase = phrase
-            }
-        }
-        return bestPhrase.replaceFirstChar { it.titlecase() }
-    }
-
-    private fun extractCandidatePhrases(text: String): List<String> {
-        val words = text.trim()
-            .split(Regex("[^\\w]+"))
-            .filter { it.isNotBlank() && it.length > 2 }
-        val phrases = mutableListOf<String>()
-        for (i in 0 until words.size - 1) {
-            phrases.add("${words[i]} ${words[i + 1]}")
-        }
-        phrases.addAll(words.distinct())
-        return phrases.distinct()
+        val targetNotes = repo.getNotesByFolder(toFolderId)
+        val incoming = notes.filter { it.folderId != toFolderId }
+        repo.updateNoteCount(toFolderId, targetNotes.size + incoming.size)
+        repo.moveNotes(noteIds, toFolderId)
     }
 
     private fun cosine(a: FloatArray, b: FloatArray): Float {
@@ -211,6 +188,9 @@ class FolderRouter @Inject constructor(
 
     companion object {
         private const val TAG = "FolderRouter"
-        const val DEFAULT_THRESHOLD = 0.72f
+        const val DEFAULT_THRESHOLD = 0.55f
+        const val SEARCH_MIN_SIM = 0.35f
+        const val SEARCH_RELATIVE_MARGIN = 0.25f
+        private val URL_PATTERN = Regex("https?://\\S+|www\\.\\S+|[\\w-]+\\.[a-z]{2,}")
     }
 }

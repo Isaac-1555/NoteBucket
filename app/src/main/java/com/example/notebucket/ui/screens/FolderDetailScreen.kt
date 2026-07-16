@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -15,10 +16,17 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items as listItems
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Checklist
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -33,7 +41,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,11 +56,14 @@ import androidx.navigation.NavHostController
 import com.example.notebucket.R
 import com.example.notebucket.data.NoteBucketRepository
 import com.example.notebucket.sort.Folder
+import com.example.notebucket.sort.FolderRouter
 import com.example.notebucket.sort.Note
 import com.example.notebucket.ui.nav.Routes
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -68,6 +78,7 @@ data class FolderDetailUiState(
 @HiltViewModel
 class FolderDetailViewModel @Inject constructor(
     private val repo: NoteBucketRepository,
+    private val router: FolderRouter,
     savedState: SavedStateHandle
 ) : ViewModel() {
 
@@ -82,9 +93,44 @@ class FolderDetailViewModel @Inject constructor(
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FolderDetailUiState())
 
+    val allFolders: StateFlow<List<Folder>> =
+        repo.observeFolders().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    private val _isSelectMode = MutableStateFlow(false)
+    val isSelectMode: StateFlow<Boolean> = _isSelectMode.asStateFlow()
+
+    private val _selectedIds = MutableStateFlow<Set<String>>(emptySet())
+    val selectedIds: StateFlow<Set<String>> = _selectedIds.asStateFlow()
+
     fun rename(newName: String) {
         if (newName.isBlank()) return
-        viewModelScope.launch { repo.renameFolder(folderId, newName.trim()) }
+        viewModelScope.launch { router.renameFolder(folderId, newName.trim()) }
+    }
+
+    fun enterSelectMode() { _isSelectMode.value = true }
+    fun exitSelectMode() { _isSelectMode.value = false; _selectedIds.value = emptySet() }
+    fun toggleSelection(id: String) {
+        _selectedIds.value = _selectedIds.value.toMutableSet().also {
+            if (!it.add(id)) it.remove(id)
+        }
+    }
+    fun selectAll(notes: List<Note>) { _selectedIds.value = notes.map { it.id }.toSet() }
+
+    fun moveSelected(toFolderId: String, onDone: () -> Unit) {
+        val ids = _selectedIds.value.toList()
+        if (ids.isEmpty()) { onDone(); return }
+        viewModelScope.launch {
+            router.bulkMove(ids, toFolderId)
+            exitSelectMode()
+            onDone()
+        }
+    }
+
+    fun deleteFolder(onDone: () -> Unit) {
+        viewModelScope.launch {
+            repo.deleteFolder(folderId)
+            onDone()
+        }
     }
 
     private fun detectWallpaper(name: String?, notes: List<Note>): Boolean {
@@ -105,27 +151,59 @@ class FolderDetailViewModel @Inject constructor(
 fun FolderDetailScreen(navController: NavHostController, folderId: String) {
     val vm: FolderDetailViewModel = hiltViewModel()
     val state by vm.state.collectAsState()
+    val isSelectMode by vm.isSelectMode.collectAsState()
+    val selectedIds by vm.selectedIds.collectAsState()
+    val allFolders by vm.allFolders.collectAsState()
     var showRenameDialog by remember { mutableStateOf(false) }
+    var showDeleteFolderDialog by remember { mutableStateOf(false) }
+    var showMoveDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     Text(
-                        text = state.folder?.name ?: "",
+                        text = if (isSelectMode) {
+                            stringResource(R.string.folder_detail_selected_count, selectedIds.size)
+                        } else {
+                            state.folder?.name ?: ""
+                        },
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.action_back))
+                    IconButton(onClick = {
+                        if (isSelectMode) vm.exitSelectMode() else navController.popBackStack()
+                    }) {
+                        Icon(
+                            if (isSelectMode) Icons.Default.Close else Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.action_back)
+                        )
                     }
                 },
                 actions = {
-                    IconButton(onClick = { showRenameDialog = true }) {
-                        Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.folder_detail_rename))
+                    if (isSelectMode) {
+                        IconButton(onClick = { vm.selectAll(state.notes) }) {
+                            Icon(Icons.Default.SelectAll, contentDescription = stringResource(R.string.folder_detail_select_all))
+                        }
+                        IconButton(
+                            onClick = { showMoveDialog = true },
+                            enabled = selectedIds.isNotEmpty()
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.DriveFileMove, contentDescription = stringResource(R.string.folder_detail_move_selected))
+                        }
+                    } else {
+                        IconButton(onClick = { vm.enterSelectMode() }, enabled = state.notes.isNotEmpty()) {
+                            Icon(Icons.Default.Checklist, contentDescription = stringResource(R.string.folder_detail_select))
+                        }
+                        IconButton(onClick = { showRenameDialog = true }) {
+                            Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.folder_detail_rename))
+                        }
+                        IconButton(onClick = { showDeleteFolderDialog = true }) {
+                            Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.folder_detail_delete_folder))
+                        }
                     }
                 }
             )
@@ -148,14 +226,22 @@ fun FolderDetailScreen(navController: NavHostController, folderId: String) {
         } else if (state.isWallpaperFolder) {
             WallpaperGrid(
                 notes = state.notes,
+                selectedIds = selectedIds,
+                isSelectMode = isSelectMode,
                 contentPadding = padding,
-                onClick = { id -> navController.navigate(Routes.noteDetail(id)) }
+                onClick = { id ->
+                    if (isSelectMode) vm.toggleSelection(id) else navController.navigate(Routes.noteDetail(id))
+                }
             )
         } else {
             NotesList(
                 notes = state.notes,
+                selectedIds = selectedIds,
+                isSelectMode = isSelectMode,
                 contentPadding = padding,
-                onClick = { id -> navController.navigate(Routes.noteDetail(id)) }
+                onClick = { id ->
+                    if (isSelectMode) vm.toggleSelection(id) else navController.navigate(Routes.noteDetail(id))
+                }
             )
         }
     }
@@ -170,11 +256,78 @@ fun FolderDetailScreen(navController: NavHostController, folderId: String) {
             }
         )
     }
+
+    if (showDeleteFolderDialog) {
+        if (state.notes.isNotEmpty()) {
+            AlertDialog(
+                onDismissRequest = { showDeleteFolderDialog = false },
+                title = { Text(stringResource(R.string.folder_detail_delete_folder)) },
+                text = { Text(stringResource(R.string.folder_detail_delete_folder_nonempty, state.notes.size)) },
+                confirmButton = {
+                    TextButton(onClick = { showDeleteFolderDialog = false }) {
+                        Text(stringResource(R.string.action_close))
+                    }
+                }
+            )
+        } else {
+            AlertDialog(
+                onDismissRequest = { showDeleteFolderDialog = false },
+                title = { Text(stringResource(R.string.folder_detail_delete_folder)) },
+                text = { Text(stringResource(R.string.folder_detail_delete_folder_confirm)) },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showDeleteFolderDialog = false
+                        vm.deleteFolder { navController.popBackStack() }
+                    }) { Text(stringResource(R.string.action_confirm)) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDeleteFolderDialog = false }) {
+                        Text(stringResource(R.string.action_cancel))
+                    }
+                }
+            )
+        }
+    }
+
+    if (showMoveDialog) {
+        AlertDialog(
+            onDismissRequest = { showMoveDialog = false },
+            title = { Text(stringResource(R.string.folder_detail_move_selected)) },
+            text = {
+                LazyColumn(modifier = Modifier.fillMaxWidth()) {
+                    listItems(allFolders.filter { it.id != folderId }, key = { it.id }) { folder ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    vm.moveSelected(folder.id) { showMoveDialog = false }
+                                }
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Folder, contentDescription = null)
+                            Text(
+                                text = "  " + folder.name,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showMoveDialog = false }) {
+                    Text(stringResource(R.string.action_close))
+                }
+            }
+        )
+    }
 }
 
 @Composable
 private fun NotesList(
     notes: List<Note>,
+    selectedIds: Set<String>,
+    isSelectMode: Boolean,
     contentPadding: PaddingValues,
     onClick: (String) -> Unit
 ) {
@@ -190,22 +343,32 @@ private fun NotesList(
                     .padding(horizontal = 16.dp)
                     .clickable { onClick(note.id) },
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    containerColor = if (note.id in selectedIds)
+                        MaterialTheme.colorScheme.primaryContainer
+                    else MaterialTheme.colorScheme.surfaceVariant
                 )
             ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Text(
-                        text = note.text,
-                        style = MaterialTheme.typography.bodyMedium,
-                        maxLines = 3,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = formatTimestamp(note.timestamp),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
+                Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.Top) {
+                    if (isSelectMode) {
+                        Checkbox(
+                            checked = note.id in selectedIds,
+                            onCheckedChange = { onClick(note.id) }
+                        )
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = note.text,
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = formatTimestamp(note.timestamp),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
                 }
             }
         }
@@ -216,6 +379,8 @@ private fun NotesList(
 @Composable
 private fun WallpaperGrid(
     notes: List<Note>,
+    selectedIds: Set<String>,
+    isSelectMode: Boolean,
     contentPadding: PaddingValues,
     onClick: (String) -> Unit
 ) {
@@ -236,10 +401,20 @@ private fun WallpaperGrid(
                     .fillMaxWidth()
                     .clickable { onClick(note.id) },
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer
+                    containerColor = if (note.id in selectedIds)
+                        MaterialTheme.colorScheme.primaryContainer
+                    else MaterialTheme.colorScheme.secondaryContainer
                 )
             ) {
                 Column(modifier = Modifier.padding(8.dp)) {
+                    if (isSelectMode) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(
+                                checked = note.id in selectedIds,
+                                onCheckedChange = { onClick(note.id) }
+                            )
+                        }
+                    }
                     Text(
                         text = note.text,
                         style = MaterialTheme.typography.bodySmall,

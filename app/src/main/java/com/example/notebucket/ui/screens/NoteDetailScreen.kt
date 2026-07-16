@@ -84,7 +84,7 @@ class NoteDetailViewModel @Inject constructor(
 
     fun delete(onDone: () -> Unit) {
         viewModelScope.launch {
-            repo.deleteNote(noteId)
+            router.deleteNote(noteId)
             onDone()
         }
     }

@@ -24,7 +24,7 @@ fun ByteArray.toFloatArray(): FloatArray {
 fun FolderEntity.toDomain(): Folder = Folder(
     id = id,
     name = name,
-    centroid = centroid?.toFloatArray(),
+    nameEmbedding = nameEmbedding?.toFloatArray(),
     noteCount = noteCount,
     isUserRenamed = isUserRenamed
 )
@@ -32,7 +32,7 @@ fun FolderEntity.toDomain(): Folder = Folder(
 fun Folder.toEntity(createdAt: Long = System.currentTimeMillis()): FolderEntity = FolderEntity(
     id = id,
     name = name,
-    centroid = centroid?.toBytes(),
+    nameEmbedding = nameEmbedding?.toBytes(),
     noteCount = noteCount,
     isUserRenamed = isUserRenamed,
     createdAt = createdAt

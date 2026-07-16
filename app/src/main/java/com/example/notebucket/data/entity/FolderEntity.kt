@@ -11,7 +11,7 @@ import androidx.room.PrimaryKey
 data class FolderEntity(
     @PrimaryKey val id: String,
     val name: String,
-    val centroid: ByteArray?,
+    val nameEmbedding: ByteArray?,
     val noteCount: Int,
     val isUserRenamed: Boolean = false,
     val createdAt: Long
