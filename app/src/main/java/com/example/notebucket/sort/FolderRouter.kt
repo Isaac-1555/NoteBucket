@@ -72,7 +72,7 @@ class FolderRouter @Inject constructor(
         return assignToFolder(unsorted, text, embedding, best.second)
     }
 
-    suspend fun createFolder(name: String): Folder {
+    suspend fun createFolder(name: String, color: String = "teal"): Folder {
         embedder.awaitLoaded()
         val nameEmb = embedder.embedNote(name)
         val folder = Folder(
@@ -80,7 +80,8 @@ class FolderRouter @Inject constructor(
             name = name,
             nameEmbedding = nameEmb,
             noteCount = 0,
-            isUserRenamed = false
+            isUserRenamed = false,
+            color = color
         )
         repo.insertFolder(folder)
         Log.d(TAG, "NEW FOLDER '$name'")

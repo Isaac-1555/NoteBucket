@@ -5,12 +5,15 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import com.example.notebucket.sort.FolderRouter
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
+
+enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
 @Singleton
 class SettingsRepository @Inject constructor(
@@ -20,6 +23,7 @@ class SettingsRepository @Inject constructor(
 
     private val keyOnboardingDone = booleanPreferencesKey("onboarding_done")
     private val keyThreshold = floatPreferencesKey("threshold")
+    private val keyThemeMode = stringPreferencesKey("theme_mode")
 
     fun observeOnboardingDone(): Flow<Boolean> =
         store.data.map { it[keyOnboardingDone] ?: false }
@@ -41,6 +45,18 @@ class SettingsRepository @Inject constructor(
         val coerced = value.coerceIn(0f, 1f)
         store.edit { it[keyThreshold] = coerced }
         router.setThreshold(coerced)
+    }
+
+    fun observeThemeMode(): Flow<ThemeMode> =
+        store.data.map { prefs ->
+            prefs[keyThemeMode]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() } ?: ThemeMode.SYSTEM
+        }
+
+    suspend fun getThemeMode(): ThemeMode =
+        store.data.first()[keyThemeMode]?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() } ?: ThemeMode.SYSTEM
+
+    suspend fun setThemeMode(mode: ThemeMode) {
+        store.edit { it[keyThemeMode] = mode.name }
     }
 
     suspend fun applyStoredThresholdToRouter() {

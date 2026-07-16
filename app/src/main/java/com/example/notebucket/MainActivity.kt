@@ -5,7 +5,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import com.example.notebucket.ui.nav.NoteBucketNavGraph
-import com.example.notebucket.ui.theme.NoteBucketTheme
 import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
@@ -14,9 +13,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            NoteBucketTheme {
-                NoteBucketNavGraph()
-            }
+            NoteBucketNavGraph()
         }
     }
 }

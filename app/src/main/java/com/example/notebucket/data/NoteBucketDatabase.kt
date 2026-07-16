@@ -11,7 +11,7 @@ import com.example.notebucket.data.entity.NoteEntity
 
 @Database(
     entities = [FolderEntity::class, NoteEntity::class, DraftEntity::class],
-    version = 2,
+    version = 3,
     exportSchema = true
 )
 abstract class NoteBucketDatabase : RoomDatabase() {

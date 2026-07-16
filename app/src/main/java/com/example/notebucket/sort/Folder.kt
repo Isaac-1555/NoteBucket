@@ -7,5 +7,6 @@ data class Folder(
     var name: String,
     var nameEmbedding: FloatArray? = null,
     var noteCount: Int = 0,
-    var isUserRenamed: Boolean = false
+    var isUserRenamed: Boolean = false,
+    var color: String = "teal"
 )

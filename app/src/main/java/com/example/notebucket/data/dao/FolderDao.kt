@@ -37,6 +37,9 @@ interface FolderDao {
     @Query("UPDATE folders SET noteCount = :count WHERE id = :id")
     suspend fun updateNoteCount(id: String, count: Int)
 
+    @Query("UPDATE folders SET color = :color WHERE id = :id")
+    suspend fun updateColor(id: String, color: String)
+
     @Query("DELETE FROM folders WHERE id = :id")
     suspend fun deleteById(id: String)
 

@@ -26,7 +26,8 @@ fun FolderEntity.toDomain(): Folder = Folder(
     name = name,
     nameEmbedding = nameEmbedding?.toFloatArray(),
     noteCount = noteCount,
-    isUserRenamed = isUserRenamed
+    isUserRenamed = isUserRenamed,
+    color = color
 )
 
 fun Folder.toEntity(createdAt: Long = System.currentTimeMillis()): FolderEntity = FolderEntity(
@@ -35,7 +36,8 @@ fun Folder.toEntity(createdAt: Long = System.currentTimeMillis()): FolderEntity 
     nameEmbedding = nameEmbedding?.toBytes(),
     noteCount = noteCount,
     isUserRenamed = isUserRenamed,
-    createdAt = createdAt
+    createdAt = createdAt,
+    color = color
 )
 
 fun NoteEntity.toDomain(): Note = Note(

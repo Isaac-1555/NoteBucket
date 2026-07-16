@@ -42,6 +42,10 @@
     <string name="search_empty_state">Type a query to search across all notes.</string>
 
     <string name="settings_title">Settings</string>
+    <string name="settings_section_appearance">Appearance</string>
+    <string name="settings_theme_system">System default</string>
+    <string name="settings_theme_light">Light</string>
+    <string name="settings_theme_dark">Dark</string>
     <string name="settings_threshold">Folder sensitivity (threshold)</string>
     <string name="settings_threshold_help">Higher = more folders (strict match). Lower = fewer folders (loose match). Default 0.55.</string>
     <string name="settings_section_storage">Storage</string>
@@ -78,6 +82,7 @@
 
     <string name="create_folder_title">Create folder</string>
     <string name="create_folder_hint">Folder name</string>
+    <string name="folder_color_label">Color</string>
 
     <string name="common_loading">Loading…</string>
     <string name="common_error">Error: %1$s</string>

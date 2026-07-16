@@ -1,6 +1,7 @@
 package com.example.notebucket.data
 
 import com.example.notebucket.data.dao.DraftDao
+import com.example.notebucket.data.dao.FolderCount
 import com.example.notebucket.data.dao.FolderDao
 import com.example.notebucket.data.dao.NoteDao
 import com.example.notebucket.data.entity.DraftEntity
@@ -35,6 +36,9 @@ class NoteBucketRepository @Inject constructor(
 
     fun observeAllNotes(): Flow<List<Note>> =
         noteDao.observeAll().map { rows -> rows.map { it.toDomain() } }
+
+    fun observeNoteCountsByFolder(): Flow<List<FolderCount>> =
+        noteDao.observeCountsByFolder()
 
     fun observeDraft(): Flow<DraftEntity?> = draftDao.observe()
 
@@ -73,6 +77,10 @@ class NoteBucketRepository @Inject constructor(
 
     suspend fun updateNoteCount(folderId: String, noteCount: Int) {
         folderDao.updateNoteCount(folderId, noteCount)
+    }
+
+    suspend fun updateFolderColor(folderId: String, color: String) {
+        folderDao.updateColor(folderId, color)
     }
 
     suspend fun renameFolder(folderId: String, newName: String) {

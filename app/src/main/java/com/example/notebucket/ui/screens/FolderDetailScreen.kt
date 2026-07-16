@@ -1,19 +1,28 @@
 package com.example.notebucket.ui.screens
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items as listItems
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Checklist
@@ -44,6 +53,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -59,6 +69,7 @@ import com.example.notebucket.sort.Folder
 import com.example.notebucket.sort.FolderRouter
 import com.example.notebucket.sort.Note
 import com.example.notebucket.ui.nav.Routes
+import com.example.notebucket.ui.theme.FolderPalette
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -105,6 +116,10 @@ class FolderDetailViewModel @Inject constructor(
     fun rename(newName: String) {
         if (newName.isBlank()) return
         viewModelScope.launch { router.renameFolder(folderId, newName.trim()) }
+    }
+
+    fun updateColor(color: String) {
+        viewModelScope.launch { repo.updateFolderColor(folderId, color) }
     }
 
     fun enterSelectMode() { _isSelectMode.value = true }
@@ -157,6 +172,10 @@ fun FolderDetailScreen(navController: NavHostController, folderId: String) {
     var showRenameDialog by remember { mutableStateOf(false) }
     var showDeleteFolderDialog by remember { mutableStateOf(false) }
     var showMoveDialog by remember { mutableStateOf(false) }
+    val isDark = isSystemInDarkTheme()
+    val folderColor = remember(state.folder?.color, isDark) {
+        FolderPalette.resolve(state.folder?.color ?: "teal", isDark)
+    }
 
     Scaffold(
         topBar = {
@@ -209,49 +228,63 @@ fun FolderDetailScreen(navController: NavHostController, folderId: String) {
             )
         }
     ) { padding ->
-        if (state.notes.isEmpty()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+        ) {
             Box(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .padding(24.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = stringResource(R.string.folder_detail_empty),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .background(folderColor)
+            )
+
+            if (state.notes.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = stringResource(R.string.folder_detail_empty),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else if (state.isWallpaperFolder) {
+                WallpaperGrid(
+                    notes = state.notes,
+                    selectedIds = selectedIds,
+                    isSelectMode = isSelectMode,
+                    contentPadding = PaddingValues(top = 0.dp),
+                    onClick = { id ->
+                        if (isSelectMode) vm.toggleSelection(id) else navController.navigate(Routes.noteDetail(id))
+                    }
+                )
+            } else {
+                NotesList(
+                    notes = state.notes,
+                    selectedIds = selectedIds,
+                    isSelectMode = isSelectMode,
+                    contentPadding = PaddingValues(top = 0.dp),
+                    onClick = { id ->
+                        if (isSelectMode) vm.toggleSelection(id) else navController.navigate(Routes.noteDetail(id))
+                    }
                 )
             }
-        } else if (state.isWallpaperFolder) {
-            WallpaperGrid(
-                notes = state.notes,
-                selectedIds = selectedIds,
-                isSelectMode = isSelectMode,
-                contentPadding = padding,
-                onClick = { id ->
-                    if (isSelectMode) vm.toggleSelection(id) else navController.navigate(Routes.noteDetail(id))
-                }
-            )
-        } else {
-            NotesList(
-                notes = state.notes,
-                selectedIds = selectedIds,
-                isSelectMode = isSelectMode,
-                contentPadding = padding,
-                onClick = { id ->
-                    if (isSelectMode) vm.toggleSelection(id) else navController.navigate(Routes.noteDetail(id))
-                }
-            )
         }
     }
 
     if (showRenameDialog) {
         RenameFolderDialog(
             initial = state.folder?.name ?: "",
+            initialColor = state.folder?.color ?: "teal",
             onDismiss = { showRenameDialog = false },
-            onConfirm = {
-                vm.rename(it)
+            onConfirm = { name, color ->
+                vm.rename(name)
+                vm.updateColor(color)
                 showRenameDialog = false
             }
         )
@@ -389,7 +422,7 @@ private fun WallpaperGrid(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(
             start = 16.dp, end = 16.dp,
-            top = contentPadding.calculateTopPadding(),
+            top = 8.dp,
             bottom = contentPadding.calculateBottomPadding()
         ),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -430,26 +463,54 @@ private fun WallpaperGrid(
 @Composable
 private fun RenameFolderDialog(
     initial: String,
+    initialColor: String,
     onDismiss: () -> Unit,
-    onConfirm: (String) -> Unit
+    onConfirm: (String, String) -> Unit
 ) {
     var text by remember { mutableStateOf(initial) }
+    var selectedColor by remember { mutableStateOf(initialColor) }
+    val isDark = isSystemInDarkTheme()
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.folder_detail_rename)) },
         text = {
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
-                label = { Text("Folder name") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    label = { Text("Folder name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    text = stringResource(R.string.folder_color_label),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(FolderPalette.all) { color ->
+                        val bg = if (isDark) color.dark else color.light
+                        val isSelected = color.key == selectedColor
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(bg)
+                                .then(
+                                    if (isSelected) Modifier.border(3.dp, MaterialTheme.colorScheme.onSurface, CircleShape)
+                                    else Modifier
+                                )
+                                .clickable { selectedColor = color.key }
+                        )
+                    }
+                }
+            }
         },
         confirmButton = {
             TextButton(
-                onClick = { onConfirm(text) },
-                enabled = text.isNotBlank() && text != initial
+                onClick = { onConfirm(text, selectedColor) },
+                enabled = text.isNotBlank() && text != initial || selectedColor != initialColor
             ) { Text(stringResource(R.string.action_save)) }
         },
         dismissButton = {

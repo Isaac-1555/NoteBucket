@@ -45,4 +45,12 @@ interface NoteDao {
 
     @Query("SELECT COUNT(*) FROM notes")
     suspend fun count(): Int
+
+    @Query("SELECT folderId, COUNT(*) as cnt FROM notes GROUP BY folderId")
+    fun observeCountsByFolder(): Flow<List<FolderCount>>
+
+    @Query("SELECT COUNT(*) FROM notes WHERE folderId = :folderId")
+    fun observeCountByFolder(folderId: String): Flow<Int>
 }
+
+data class FolderCount(val folderId: String, val cnt: Int)

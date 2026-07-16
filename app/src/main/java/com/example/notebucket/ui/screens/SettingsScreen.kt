@@ -21,6 +21,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarHost
@@ -51,6 +52,7 @@ import com.example.notebucket.ai.BgeEmbedder
 import com.example.notebucket.data.NoteBucketDatabase
 import com.example.notebucket.data.NoteBucketRepository
 import com.example.notebucket.data.SettingsRepository
+import com.example.notebucket.data.ThemeMode
 import com.example.notebucket.sort.FolderRouter
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -86,6 +88,9 @@ class SettingsViewModel @Inject constructor(
     val thresholdFlow: StateFlow<Float> =
         settings.observeThreshold().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FolderRouter.DEFAULT_THRESHOLD)
 
+    val themeModeFlow: StateFlow<ThemeMode> =
+        settings.observeThemeMode().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ThemeMode.SYSTEM)
+
     init {
         viewModelScope.launch {
             thresholdFlow.collect { t -> _state.value = _state.value.copy(threshold = t) }
@@ -106,6 +111,10 @@ class SettingsViewModel @Inject constructor(
     fun onThresholdChange(value: Float) {
         _state.value = _state.value.copy(threshold = value)
         viewModelScope.launch { settings.setThreshold(value) }
+    }
+
+    fun setThemeMode(mode: ThemeMode) {
+        viewModelScope.launch { settings.setThemeMode(mode) }
     }
 
     fun reloadModel() {
@@ -153,6 +162,7 @@ class SettingsViewModel @Inject constructor(
 fun SettingsScreen(navController: NavHostController) {
     val vm: SettingsViewModel = hiltViewModel()
     val state by vm.state.collectAsState()
+    val themeMode by vm.themeModeFlow.collectAsState()
     var showClearDialog by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
@@ -185,6 +195,27 @@ fun SettingsScreen(navController: NavHostController) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
+            CollapsibleSection(
+                title = stringResource(R.string.settings_section_appearance),
+                defaultExpanded = true
+            ) {
+                ThemeModeOption(
+                    label = stringResource(R.string.settings_theme_system),
+                    selected = themeMode == ThemeMode.SYSTEM,
+                    onClick = { vm.setThemeMode(ThemeMode.SYSTEM) }
+                )
+                ThemeModeOption(
+                    label = stringResource(R.string.settings_theme_light),
+                    selected = themeMode == ThemeMode.LIGHT,
+                    onClick = { vm.setThemeMode(ThemeMode.LIGHT) }
+                )
+                ThemeModeOption(
+                    label = stringResource(R.string.settings_theme_dark),
+                    selected = themeMode == ThemeMode.DARK,
+                    onClick = { vm.setThemeMode(ThemeMode.DARK) }
+                )
+            }
+
             CollapsibleSection(
                 title = stringResource(R.string.settings_section_storage),
                 defaultExpanded = true
@@ -271,6 +302,31 @@ fun SettingsScreen(navController: NavHostController) {
                     Text(stringResource(R.string.settings_clear_cancel))
                 }
             }
+        )
+    }
+}
+
+@Composable
+private fun ThemeModeOption(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        androidx.compose.material3.RadioButton(
+            selected = selected,
+            onClick = onClick
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.padding(start = 8.dp)
         )
     }
 }

@@ -1,6 +1,9 @@
 package com.example.notebucket.ui.screens
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,9 +15,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -52,9 +59,10 @@ import androidx.lifecycle.ViewModel
 import androidx.navigation.NavHostController
 import com.example.notebucket.R
 import com.example.notebucket.data.NoteBucketRepository
-import com.example.notebucket.sort.Folder
+import com.example.notebucket.data.dao.FolderCount
 import com.example.notebucket.sort.FolderRouter
 import com.example.notebucket.ui.nav.Routes
+import com.example.notebucket.ui.theme.FolderPalette
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -68,8 +76,7 @@ data class FolderTile(
     val id: String,
     val name: String,
     val noteCount: Int,
-    val isUserRenamed: Boolean,
-    val latestNotePreview: String?
+    val color: String
 )
 
 @HiltViewModel
@@ -79,25 +86,22 @@ class HomeViewModel @Inject constructor(
 ) : ViewModel() {
 
     val tiles: StateFlow<List<FolderTile>> =
-        combine(repo.observeFolders(), repo.observeAllNotes()) { folders, notes ->
+        combine(repo.observeFolders(), repo.observeNoteCountsByFolder()) { folders, counts ->
+            val countMap = counts.associate { it.folderId to it.cnt }
             folders.map { f ->
-                val latest = notes
-                    .filter { it.folderId == f.id }
-                    .maxByOrNull { it.timestamp }
                 FolderTile(
                     id = f.id,
                     name = f.name,
-                    noteCount = notes.count { it.folderId == f.id },
-                    isUserRenamed = f.isUserRenamed,
-                    latestNotePreview = latest?.text
+                    noteCount = countMap[f.id] ?: 0,
+                    color = f.color
                 )
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    fun createFolder(name: String) {
+    fun createFolder(name: String, color: String) {
         if (name.isBlank()) return
         viewModelScope.launch {
-            router.createFolder(name.trim())
+            router.createFolder(name.trim(), color)
         }
     }
 }
@@ -193,8 +197,8 @@ fun HomeScreen(navController: NavHostController) {
     if (showCreateFolderDialog) {
         CreateFolderDialog(
             onDismiss = { showCreateFolderDialog = false },
-            onConfirm = {
-                vm.createFolder(it)
+            onConfirm = { name, color ->
+                vm.createFolder(name, color)
                 showCreateFolderDialog = false
             }
         )
@@ -203,48 +207,48 @@ fun HomeScreen(navController: NavHostController) {
 
 @Composable
 private fun FolderTileCard(tile: FolderTile, onClick: () -> Unit) {
+    val isDark = isSystemInDarkTheme()
+    val folderColor = remember(tile.color, isDark) {
+        FolderPalette.resolve(tile.color, isDark)
+    }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(120.dp)
+            .height(100.dp)
             .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant
-        )
+        ),
+        shape = RoundedCornerShape(16.dp)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(12.dp),
-            verticalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+        Column(modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(6.dp)
+                    .background(folderColor, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+            )
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
                     text = tile.name,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
                 Text(
-                    text = "${tile.noteCount}",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary
+                    text = "${tile.noteCount} notes",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = tile.latestNotePreview ?: "—",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
         }
     }
 }
@@ -252,24 +256,52 @@ private fun FolderTileCard(tile: FolderTile, onClick: () -> Unit) {
 @Composable
 private fun CreateFolderDialog(
     onDismiss: () -> Unit,
-    onConfirm: (String) -> Unit
+    onConfirm: (String, String) -> Unit
 ) {
     var text by remember { mutableStateOf("") }
+    val defaultColor = FolderPalette.all[0].key
+    var selectedColor by remember { mutableStateOf(defaultColor) }
+    val isDark = isSystemInDarkTheme()
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.create_folder_title)) },
         text = {
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
-                label = { Text(stringResource(R.string.create_folder_hint)) },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    label = { Text(stringResource(R.string.create_folder_hint)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    text = stringResource(R.string.folder_color_label),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(FolderPalette.all) { color ->
+                        val bg = if (isDark) color.dark else color.light
+                        val isSelected = color.key == selectedColor
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(bg)
+                                .then(
+                                    if (isSelected) Modifier.border(3.dp, MaterialTheme.colorScheme.onSurface, CircleShape)
+                                    else Modifier
+                                )
+                                .clickable { selectedColor = color.key }
+                        )
+                    }
+                }
+            }
         },
         confirmButton = {
             TextButton(
-                onClick = { onConfirm(text) },
+                onClick = { onConfirm(text, selectedColor) },
                 enabled = text.isNotBlank()
             ) { Text(stringResource(R.string.action_create)) }
         },
