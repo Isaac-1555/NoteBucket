@@ -226,6 +226,13 @@ class NoteInputViewModel @Inject constructor(
         _state.value = _state.value.copy(isListening = listening)
     }
 
+    fun onVoiceError(message: String) {
+        _state.value = _state.value.copy(
+            isListening = false,
+            snackbar = message
+        )
+    }
+
     fun appendText(text: String) {
         val current = _state.value.textFieldValue
         val newText = current.text + text
@@ -492,6 +499,8 @@ fun NoteInputScreen(navController: NavHostController) {
                         if (state.isListening) {
                             voiceTranscriber.stopListening()
                             vm.setListening(false)
+                        } else if (!VoiceTranscriber.isAvailable(context)) {
+                            vm.onVoiceError("Voice recognition not available on this device.")
                         } else if (hasAudioPermission) {
                             startVoiceRecognition(voiceTranscriber, vm)
                         } else {
@@ -557,11 +566,12 @@ private fun startVoiceRecognition(transcriber: VoiceTranscriber, vm: NoteInputVi
             vm.appendText(" $text")
             vm.setListening(false)
         },
-        onPartial = { partial ->
-            // Could show partial text, but for simplicity just wait for final
-        },
+        onPartial = { },
         onEndOfSpeech = {
             vm.setListening(false)
+        },
+        onError = { message ->
+            vm.onVoiceError(message)
         }
     )
 }

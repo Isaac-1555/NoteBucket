@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import android.util.Log
 
 class VoiceTranscriber(context: Context) {
 
@@ -15,7 +16,8 @@ class VoiceTranscriber(context: Context) {
     fun startListening(
         onResult: (String) -> Unit,
         onPartial: ((String) -> Unit)? = null,
-        onEndOfSpeech: (() -> Unit)? = null
+        onEndOfSpeech: (() -> Unit)? = null,
+        onError: ((String) -> Unit)? = null
     ) {
         if (isListening) return
         isListening = true
@@ -27,22 +29,30 @@ class VoiceTranscriber(context: Context) {
         }
 
         recognizer.setRecognitionListener(object : RecognitionListener {
-            override fun onReadyForSpeech(params: Bundle?) {}
-            override fun onBeginningOfSpeech() {}
+            override fun onReadyForSpeech(params: Bundle?) {
+                Log.d(TAG, "onReadyForSpeech")
+            }
+            override fun onBeginningOfSpeech() {
+                Log.d(TAG, "onBeginningOfSpeech")
+            }
             override fun onRmsChanged(rmsdB: Float) {}
             override fun onBufferReceived(buffer: ByteArray?) {}
             override fun onEndOfSpeech() {
+                Log.d(TAG, "onEndOfSpeech")
                 isListening = false
                 onEndOfSpeech?.invoke()
             }
             override fun onError(error: Int) {
+                val msg = errorToString(error)
+                Log.e(TAG, "onError: $error ($msg)")
                 isListening = false
-                onEndOfSpeech?.invoke()
+                onError?.invoke(msg)
             }
             override fun onResults(results: Bundle?) {
                 isListening = false
                 val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                 val text = matches?.firstOrNull() ?: ""
+                Log.d(TAG, "onResults: '$text'")
                 if (text.isNotBlank()) onResult(text)
             }
             override fun onPartialResults(partialResults: Bundle?) {
@@ -68,7 +78,22 @@ class VoiceTranscriber(context: Context) {
         recognizer.destroy()
     }
 
+    private fun errorToString(error: Int): String = when (error) {
+        SpeechRecognizer.ERROR_NO_MATCH -> "No speech detected. Try again."
+        SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "Speech timeout. Try again."
+        SpeechRecognizer.ERROR_CLIENT -> "Recognition client error."
+        SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Missing microphone permission."
+        SpeechRecognizer.ERROR_NETWORK -> "Network error. Check connection."
+        SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Network timeout."
+        SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "Recognition service busy."
+        SpeechRecognizer.ERROR_SERVER -> "Server error."
+        SpeechRecognizer.ERROR_AUDIO -> "Audio recording error."
+        else -> "Voice input failed (error $error)."
+    }
+
     companion object {
+        private const val TAG = "VoiceTranscriber"
+
         fun isAvailable(context: Context): Boolean =
             SpeechRecognizer.isRecognitionAvailable(context)
     }
