@@ -39,6 +39,13 @@
     <string name="search_filter_date">Date range</string>
     <string name="search_no_results">No matches.</string>
     <string name="search_empty_state">Type a query to search across all notes.</string>
+    <string name="search_filters">Filters</string>
+    <string name="search_filter_custom_range">Custom range</string>
+    <string name="search_filter_date_from">From</string>
+    <string name="search_filter_date_to">To</string>
+    <string name="search_clear_filters">Clear filters</string>
+    <string name="search_results_count">%1$d results</string>
+    <string name="search_results_count_one">1 result</string>
 
     <string name="settings_title">Settings</string>
     <string name="settings_section_appearance">Appearance</string>

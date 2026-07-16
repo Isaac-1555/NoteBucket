@@ -1,5 +1,8 @@
 package com.example.notebucket.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -9,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items as listItems
@@ -16,26 +20,38 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -54,6 +70,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import javax.inject.Inject
 
 enum class DatePreset(val label: String, val millisBack: Long?) {
@@ -67,7 +86,12 @@ data class SearchUiState(
     val query: String = "",
     val folderFilterId: String? = null,
     val datePreset: DatePreset = DatePreset.ALL_TIME,
+    val filtersExpanded: Boolean = false,
+    val useCustomDateRange: Boolean = false,
+    val customDateFromMillis: Long? = null,
+    val customDateToMillis: Long? = null,
     val results: List<SearchResult> = emptyList(),
+    val resultCount: Int = 0,
     val isSearching: Boolean = false,
     val error: String? = null
 )
@@ -93,14 +117,52 @@ class SearchViewModel @Inject constructor(
     }
 
     fun setDatePreset(preset: DatePreset) {
-        _state.value = _state.value.copy(datePreset = preset)
+        _state.value = _state.value.copy(datePreset = preset, useCustomDateRange = false)
+    }
+
+    fun toggleFilters() {
+        _state.value = _state.value.copy(filtersExpanded = !_state.value.filtersExpanded)
+    }
+
+    fun setUseCustomDateRange(enabled: Boolean) {
+        _state.value = _state.value.copy(useCustomDateRange = enabled)
+    }
+
+    fun setCustomDateFrom(millis: Long?) {
+        _state.value = _state.value.copy(customDateFromMillis = millis)
+    }
+
+    fun setCustomDateTo(millis: Long?) {
+        _state.value = _state.value.copy(customDateToMillis = millis)
+    }
+
+    fun clearFilters() {
+        _state.value = _state.value.copy(
+            folderFilterId = null,
+            datePreset = DatePreset.ALL_TIME,
+            useCustomDateRange = false,
+            customDateFromMillis = null,
+            customDateToMillis = null
+        )
+    }
+
+    private fun hasActiveFilters(): Boolean {
+        val s = _state.value
+        return s.folderFilterId != null ||
+            s.datePreset != DatePreset.ALL_TIME ||
+            s.useCustomDateRange
     }
 
     fun search() {
         val s = _state.value
         if (s.query.isBlank()) return
         val now = System.currentTimeMillis()
-        val dateFrom = s.datePreset.millisBack?.let { now - it }
+        val dateFrom = if (s.useCustomDateRange) {
+            s.customDateFromMillis
+        } else {
+            s.datePreset.millisBack?.let { now - it }
+        }
+        val dateTo = if (s.useCustomDateRange) s.customDateToMillis else null
         _state.value = s.copy(isSearching = true, error = null)
         viewModelScope.launch {
             try {
@@ -109,9 +171,13 @@ class SearchViewModel @Inject constructor(
                     topK = 5,
                     folderFilter = s.folderFilterId,
                     dateFrom = dateFrom,
-                    dateTo = null
+                    dateTo = dateTo
                 )
-                _state.value = _state.value.copy(results = results, isSearching = false)
+                _state.value = _state.value.copy(
+                    results = results,
+                    resultCount = results.size,
+                    isSearching = false
+                )
             } catch (t: Throwable) {
                 _state.value = _state.value.copy(isSearching = false, error = t.message ?: "Search failed")
             }
@@ -125,6 +191,11 @@ fun SearchScreen(navController: NavHostController) {
     val vm: SearchViewModel = hiltViewModel()
     val state by vm.state.collectAsState()
     val folders by vm.folders.collectAsState()
+
+    var showFromPicker by remember { mutableStateOf(false) }
+    var showToPicker by remember { mutableStateOf(false) }
+
+    val dateFormat = remember { SimpleDateFormat("MMM d, yyyy", Locale.getDefault()) }
 
     Scaffold(
         topBar = {
@@ -164,35 +235,137 @@ fun SearchScreen(navController: NavHostController) {
                 Text(if (state.isSearching) "Searching…" else stringResource(R.string.action_search))
             }
 
-            Text("Folder", style = MaterialTheme.typography.labelMedium)
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                item {
-                    FilterChip(
-                        selected = state.folderFilterId == null,
-                        onClick = { vm.setFolderFilter(null) },
-                        label = { Text("All") }
-                    )
-                }
-                listItems(folders, key = { it.id }) { folder ->
-                    FilterChip(
-                        selected = state.folderFilterId == folder.id,
-                        onClick = { vm.setFolderFilter(folder.id) },
-                        label = { Text(folder.name, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                    )
+            // ── Filters toggle ──────────────────────────────────────────
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { vm.toggleFilters() }
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = stringResource(R.string.search_filters),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Icon(
+                    imageVector = if (state.filtersExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = if (state.filtersExpanded) "Collapse filters" else "Expand filters",
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            // ── Collapsible filter content ───────────────────────────────
+            AnimatedVisibility(
+                visible = state.filtersExpanded,
+                enter = expandVertically(),
+                exit = shrinkVertically()
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    // Folder filter
+                    Text(stringResource(R.string.search_filter_folder), style = MaterialTheme.typography.labelMedium)
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        item {
+                            FilterChip(
+                                selected = state.folderFilterId == null,
+                                onClick = { vm.setFolderFilter(null) },
+                                label = { Text("All") }
+                            )
+                        }
+                        listItems(folders, key = { it.id }) { folder ->
+                            FilterChip(
+                                selected = state.folderFilterId == folder.id,
+                                onClick = { vm.setFolderFilter(folder.id) },
+                                label = { Text(folder.name, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                            )
+                        }
+                    }
+
+                    // Date filter
+                    Text(stringResource(R.string.search_filter_date), style = MaterialTheme.typography.labelMedium)
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listItems(DatePreset.entries.toList()) { preset ->
+                            FilterChip(
+                                selected = state.datePreset == preset && !state.useCustomDateRange,
+                                onClick = { vm.setDatePreset(preset) },
+                                label = { Text(preset.label) }
+                            )
+                        }
+                        item {
+                            FilterChip(
+                                selected = state.useCustomDateRange,
+                                onClick = { vm.setUseCustomDateRange(true) },
+                                label = { Text(stringResource(R.string.search_filter_custom_range)) }
+                            )
+                        }
+                    }
+
+                    // Custom date range fields
+                    AnimatedVisibility(visible = state.useCustomDateRange) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedTextField(
+                                    value = state.customDateFromMillis?.let { dateFormat.format(Date(it)) } ?: "",
+                                    onValueChange = {},
+                                    label = { Text(stringResource(R.string.search_filter_date_from)) },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable { showFromPicker = true },
+                                    readOnly = true,
+                                    enabled = false,
+                                    trailingIcon = {
+                                        Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(20.dp))
+                                    },
+                                    colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                                        disabledTextColor = MaterialTheme.colorScheme.onSurface,
+                                        disabledBorderColor = MaterialTheme.colorScheme.outline,
+                                        disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        disabledTrailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                )
+                                OutlinedTextField(
+                                    value = state.customDateToMillis?.let { dateFormat.format(Date(it)) } ?: "",
+                                    onValueChange = {},
+                                    label = { Text(stringResource(R.string.search_filter_date_to)) },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable { showToPicker = true },
+                                    readOnly = true,
+                                    enabled = false,
+                                    trailingIcon = {
+                                        Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(20.dp))
+                                    },
+                                    colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                                        disabledTextColor = MaterialTheme.colorScheme.onSurface,
+                                        disabledBorderColor = MaterialTheme.colorScheme.outline,
+                                        disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        disabledTrailingIconColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                )
+                            }
+                        }
+                    }
+
+                    // Clear filters button
+                    val hasActiveFilters = state.folderFilterId != null ||
+                        state.datePreset != DatePreset.ALL_TIME ||
+                        state.useCustomDateRange
+                    if (hasActiveFilters) {
+                        OutlinedButton(
+                            onClick = { vm.clearFilters() },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(stringResource(R.string.search_clear_filters))
+                        }
+                    }
                 }
             }
 
-            Text("Date", style = MaterialTheme.typography.labelMedium)
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listItems(DatePreset.entries.toList()) { preset ->
-                    FilterChip(
-                        selected = state.datePreset == preset,
-                        onClick = { vm.setDatePreset(preset) },
-                        label = { Text(preset.label) }
-                    )
-                }
-            }
-
+            // ── Error ────────────────────────────────────────────────────
             if (state.error != null) {
                 Text(
                     text = state.error!!,
@@ -201,10 +374,11 @@ fun SearchScreen(navController: NavHostController) {
                 )
             }
 
+            // ── Results ──────────────────────────────────────────────────
             if (state.results.isEmpty() && !state.isSearching && state.query.isBlank()) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
-                    contentAlignment = androidx.compose.ui.Alignment.Center
+                    contentAlignment = Alignment.Center
                 ) {
                     Text(
                         text = stringResource(R.string.search_empty_state),
@@ -213,6 +387,18 @@ fun SearchScreen(navController: NavHostController) {
                     )
                 }
             } else {
+                if (state.results.isNotEmpty() && !state.isSearching) {
+                    Text(
+                        text = if (state.resultCount == 1) {
+                            stringResource(R.string.search_results_count_one)
+                        } else {
+                            stringResource(R.string.search_results_count, state.resultCount)
+                        },
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
                 LazyColumn(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     contentPadding = PaddingValues(bottom = 16.dp)
@@ -229,7 +415,7 @@ fun SearchScreen(navController: NavHostController) {
                         item {
                             Box(
                                 modifier = Modifier.fillMaxWidth().padding(16.dp),
-                                contentAlignment = androidx.compose.ui.Alignment.Center
+                                contentAlignment = Alignment.Center
                             ) {
                                 Text(stringResource(R.string.search_no_results), color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
@@ -237,6 +423,55 @@ fun SearchScreen(navController: NavHostController) {
                     }
                 }
             }
+        }
+    }
+
+    // ── Date Picker Dialogs ──────────────────────────────────────────
+    if (showFromPicker) {
+        val pickerState = rememberDatePickerState(
+            initialSelectedDateMillis = state.customDateFromMillis
+        )
+        DatePickerDialog(
+            onDismissRequest = { showFromPicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    vm.setCustomDateFrom(pickerState.selectedDateMillis)
+                    showFromPicker = false
+                }) {
+                    Text(stringResource(R.string.action_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showFromPicker = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        ) {
+            DatePicker(state = pickerState)
+        }
+    }
+
+    if (showToPicker) {
+        val pickerState = rememberDatePickerState(
+            initialSelectedDateMillis = state.customDateToMillis
+        )
+        DatePickerDialog(
+            onDismissRequest = { showToPicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    vm.setCustomDateTo(pickerState.selectedDateMillis)
+                    showToPicker = false
+                }) {
+                    Text(stringResource(R.string.action_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showToPicker = false }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        ) {
+            DatePicker(state = pickerState)
         }
     }
 }
