@@ -6,6 +6,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,6 +31,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Mic
@@ -39,6 +41,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -112,8 +115,7 @@ data class NoteInputState(
     val isListening: Boolean = false,
     val disambiguationResult: RoutingResult? = null,
     val pendingText: String = "",
-    val showFullFolderList: Boolean = false,
-    val allFolders: List<Folder> = emptyList()
+    val showCreateFolderInPicker: Boolean = false
 ) {
     val text: String get() = textFieldValue.text
     val isNotBlank: Boolean get() = text.isNotBlank()
@@ -271,8 +273,7 @@ class NoteInputViewModel @Inject constructor(
                     _state.value = _state.value.copy(
                         isCommitting = false,
                         disambiguationResult = result,
-                        pendingText = text,
-                        showFullFolderList = false
+                        pendingText = text
                     )
                 } else {
                     val folderId = result.candidates.first().folder.id
@@ -292,8 +293,6 @@ class NoteInputViewModel @Inject constructor(
         val embedding = _state.value.disambiguationResult?.embedding ?: return
         _state.value = _state.value.copy(
             disambiguationResult = null,
-            showFullFolderList = false,
-            allFolders = emptyList(),
             isCommitting = true
         )
         viewModelScope.launch {
@@ -308,23 +307,35 @@ class NoteInputViewModel @Inject constructor(
         }
     }
 
-    fun showFullFolderPicker() {
-        viewModelScope.launch {
-            val folders = repo.getAllFolders()
-            _state.value = _state.value.copy(
-                showFullFolderList = true,
-                allFolders = folders
-            )
-        }
-    }
-
     fun dismissDisambiguation() {
         _state.value = _state.value.copy(
             disambiguationResult = null,
             pendingText = "",
-            showFullFolderList = false,
-            allFolders = emptyList()
+            showCreateFolderInPicker = false
         )
+    }
+
+    fun showCreateFolderInPicker() {
+        _state.value = _state.value.copy(showCreateFolderInPicker = true)
+    }
+
+    fun dismissCreateFolderInPicker() {
+        _state.value = _state.value.copy(showCreateFolderInPicker = false)
+    }
+
+    fun onCreateFolderInPicker(name: String, color: String) {
+        if (name.isBlank()) return
+        viewModelScope.launch {
+            try {
+                val folder = router.createFolder(name.trim(), color)
+                _state.value = _state.value.copy(showCreateFolderInPicker = false)
+                onFolderChosen(folder.id)
+            } catch (t: Throwable) {
+                _state.value = _state.value.copy(
+                    error = t.message ?: "Failed to create folder"
+                )
+            }
+        }
     }
 
     private suspend fun finalizeCommit(text: String, folderId: String, embedding: FloatArray) {
@@ -348,8 +359,6 @@ class NoteInputViewModel @Inject constructor(
             pendingAttachments = emptyList(),
             disambiguationResult = null,
             pendingText = "",
-            showFullFolderList = false,
-            allFolders = emptyList(),
             snackbar = "Filed in \"${result.folder.name}\""
         )
     }
@@ -443,11 +452,13 @@ fun NoteInputScreen(navController: NavHostController) {
     state.disambiguationResult?.let { result ->
         FolderPickDialog(
             candidates = result.candidates,
-            showFullList = state.showFullFolderList,
-            allFolders = state.allFolders,
+            unsortedFolderId = result.unsortedFolderId,
+            showCreateFolder = state.showCreateFolderInPicker,
             onCandidateChosen = vm::onFolderChosen,
-            onShowFullList = vm::showFullFolderPicker,
-            onDismiss = vm::dismissDisambiguation
+            onDismiss = vm::dismissDisambiguation,
+            onCreateFolder = vm::showCreateFolderInPicker,
+            onConfirmCreateFolder = vm::onCreateFolderInPicker,
+            onDismissCreateFolder = vm::dismissCreateFolderInPicker
         )
     }
 
@@ -661,11 +672,13 @@ private fun startVoiceRecognition(transcriber: VoiceTranscriber, vm: NoteInputVi
 @Composable
 private fun FolderPickDialog(
     candidates: List<com.example.notebucket.sort.RoutingCandidate>,
-    showFullList: Boolean,
-    allFolders: List<Folder>,
+    unsortedFolderId: String?,
+    showCreateFolder: Boolean,
     onCandidateChosen: (String) -> Unit,
-    onShowFullList: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onCreateFolder: () -> Unit,
+    onConfirmCreateFolder: (String, String) -> Unit,
+    onDismissCreateFolder: () -> Unit
 ) {
     val isDark = androidx.compose.foundation.isSystemInDarkTheme()
 
@@ -673,33 +686,16 @@ private fun FolderPickDialog(
         onDismissRequest = onDismiss,
         title = { Text("Where should this go?") },
         text = {
-            if (showFullList) {
-                LazyColumn(modifier = Modifier.fillMaxWidth()) {
-                    items(allFolders, key = { it.id }) { folder ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onCandidateChosen(folder.id) }
-                                .padding(vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(12.dp)
-                                    .clip(CircleShape)
-                                    .background(FolderPalette.resolve(folder.color, isDark))
-                            )
-                            Spacer(Modifier.width(12.dp))
-                            Text(
-                                text = folder.name,
-                                style = MaterialTheme.typography.bodyLarge
-                            )
-                        }
-                    }
-                }
-            } else {
-                Column(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                if (candidates.isNotEmpty()) {
+                    Text(
+                        text = "Suggested",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
                     candidates.forEach { candidate ->
+                        val pct = (candidate.similarity * 100).toInt()
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -717,17 +713,54 @@ private fun FolderPickDialog(
                             Text(
                                 text = candidate.folder.name,
                                 style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.Medium
+                                fontWeight = FontWeight.Medium,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text(
+                                text = "$pct%",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
+                    Spacer(Modifier.height(8.dp))
+                } else {
+                    Text(
+                        text = "No strong match found.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                }
 
-                    Spacer(Modifier.height(4.dp))
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onCreateFolder() }
+                        .padding(vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.CreateNewFolder,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(12.dp)
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        text = "Create new folder",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                if (unsortedFolderId != null) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onShowFullList() }
+                            .clickable { onCandidateChosen(unsortedFolderId) }
                             .padding(vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -739,7 +772,7 @@ private fun FolderPickDialog(
                         )
                         Spacer(Modifier.width(12.dp))
                         Text(
-                            text = "Pick another folder",
+                            text = "Save to Unsorted",
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -751,6 +784,71 @@ private fun FolderPickDialog(
             TextButton(onClick = onDismiss) {
                 Text("Cancel")
             }
+        }
+    )
+
+    if (showCreateFolder) {
+        CreateFolderInPickerDialog(
+            onDismiss = onDismissCreateFolder,
+            onConfirm = onConfirmCreateFolder
+        )
+    }
+}
+
+@Composable
+private fun CreateFolderInPickerDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (String, String) -> Unit
+) {
+    var text by remember { mutableStateOf("") }
+    val defaultColor = FolderPalette.all[0].key
+    var selectedColor by remember { mutableStateOf(defaultColor) }
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Create folder") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                androidx.compose.material3.OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    label = { Text("Folder name") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    text = "Color",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(FolderPalette.all) { color ->
+                        val bg = if (isDark) color.dark else color.light
+                        val isSelected = color.key == selectedColor
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(bg)
+                                .then(
+                                    if (isSelected) Modifier.border(3.dp, MaterialTheme.colorScheme.onSurface, CircleShape)
+                                    else Modifier
+                                )
+                                .clickable { selectedColor = color.key }
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(text, selectedColor) },
+                enabled = text.isNotBlank()
+            ) { Text("Create") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
         }
     )
 }

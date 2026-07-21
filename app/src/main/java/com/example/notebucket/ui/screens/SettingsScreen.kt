@@ -71,7 +71,8 @@ data class SettingsUiState(
     val dbSizeHuman: String = "—",
     val modelLoaded: Boolean = false,
     val clearDone: Boolean = false,
-    val error: String? = null
+    val error: String? = null,
+    val hiddenFolders: List<com.example.notebucket.sort.Folder> = emptyList()
 )
 
 @HiltViewModel
@@ -103,6 +104,11 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             repo.observeFolders().collect { folders ->
                 _state.value = _state.value.copy(folderCount = folders.size)
+            }
+        }
+        viewModelScope.launch {
+            repo.observeFolders().collect { folders ->
+                _state.value = _state.value.copy(hiddenFolders = folders.filter { it.isHidden })
             }
         }
         viewModelScope.launch { refresh() }
@@ -139,6 +145,38 @@ class SettingsViewModel @Inject constructor(
 
     fun consumeClearDone() {
         _state.value = _state.value.copy(clearDone = false)
+    }
+
+    fun addHiddenFolder(name: String) {
+        if (name.isBlank()) return
+        viewModelScope.launch {
+            try {
+                embedder.awaitLoaded()
+                val nameEmb = embedder.embedNote(name)
+                val folder = com.example.notebucket.sort.Folder(
+                    id = com.example.notebucket.data.mapper.newFolderId(),
+                    name = name.trim(),
+                    nameEmbedding = nameEmb,
+                    noteCount = 0,
+                    isUserRenamed = false,
+                    color = "slate",
+                    isHidden = true
+                )
+                repo.insertFolder(folder)
+            } catch (t: Throwable) {
+                _state.value = _state.value.copy(error = t.message ?: "Failed to create folder")
+            }
+        }
+    }
+
+    fun deleteHiddenFolder(folderId: String) {
+        viewModelScope.launch {
+            try {
+                repo.deleteFolder(folderId)
+            } catch (t: Throwable) {
+                _state.value = _state.value.copy(error = t.message ?: "Failed to delete folder")
+            }
+        }
     }
 
     private suspend fun refresh() {
@@ -223,6 +261,70 @@ fun SettingsScreen(navController: NavHostController) {
                 Text(stringResource(R.string.settings_storage_notes, state.noteCount))
                 Text(stringResource(R.string.settings_storage_folders, state.folderCount))
                 Text(stringResource(R.string.settings_storage_db, state.dbSizeHuman))
+            }
+
+            CollapsibleSection(
+                title = stringResource(R.string.settings_section_hidden_folders)
+            ) {
+                Text(
+                    text = stringResource(R.string.settings_hidden_folders_help),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                if (state.hiddenFolders.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.settings_hidden_folders_empty),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    state.hiddenFolders.forEach { folder ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = folder.name,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            if (folder.noteCount == 0) {
+                                TextButton(
+                                    onClick = { vm.deleteHiddenFolder(folder.id) }
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.settings_hidden_folders_delete),
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            } else {
+                                Text(
+                                    text = "${folder.noteCount} notes",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+                var showAddDialog by remember { mutableStateOf(false) }
+                OutlinedButton(
+                    onClick = { showAddDialog = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(stringResource(R.string.settings_hidden_folders_add))
+                }
+                if (showAddDialog) {
+                    AddHiddenFolderDialog(
+                        onDismiss = { showAddDialog = false },
+                        onConfirm = { name ->
+                            showAddDialog = false
+                            vm.addHiddenFolder(name)
+                        }
+                    )
+                }
             }
 
             CollapsibleSection(
@@ -363,4 +465,38 @@ private fun CollapsibleSection(
             content()
         }
     }
+}
+
+@Composable
+private fun AddHiddenFolderDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var name by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.settings_hidden_folders_add)) },
+        text = {
+            androidx.compose.material3.OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text(stringResource(R.string.settings_hidden_folders_add_hint)) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(name) },
+                enabled = name.isNotBlank()
+            ) {
+                Text(stringResource(R.string.action_create))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.action_cancel))
+            }
+        }
+    )
 }

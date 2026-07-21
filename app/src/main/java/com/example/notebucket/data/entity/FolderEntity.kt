@@ -15,7 +15,8 @@ data class FolderEntity(
     val noteCount: Int,
     val isUserRenamed: Boolean = false,
     val createdAt: Long,
-    val color: String = "teal"
+    val color: String = "teal",
+    val isHidden: Boolean = false
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true

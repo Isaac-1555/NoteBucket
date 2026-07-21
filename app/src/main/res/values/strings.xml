@@ -78,6 +78,13 @@
     <string name="settings_model_status_not_loaded">Model: not loaded</string>
     <string name="settings_model_reload">Reload model</string>
 
+    <string name="settings_section_hidden_folders">Hidden Folders</string>
+    <string name="settings_hidden_folders_help">Always considered when sorting. Appear as suggestions when no strong match is found.</string>
+    <string name="settings_hidden_folders_add">Add hidden folder</string>
+    <string name="settings_hidden_folders_empty">No hidden folders.</string>
+    <string name="settings_hidden_folders_add_hint">Folder name</string>
+    <string name="settings_hidden_folders_delete">Delete</string>
+
     <string name="note_detail_title">Note</string>
     <string name="note_detail_folder">Folder</string>
     <string name="note_detail_timestamp">Saved</string>

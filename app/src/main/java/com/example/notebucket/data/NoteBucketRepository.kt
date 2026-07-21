@@ -28,6 +28,9 @@ class NoteBucketRepository @Inject constructor(
     fun observeFolders(): Flow<List<Folder>> =
         folderDao.observeAll().map { rows -> rows.map { it.toDomain() } }
 
+    fun observeVisibleFolders(): Flow<List<Folder>> =
+        folderDao.observeVisible().map { rows -> rows.map { it.toDomain() } }
+
     fun observeFolder(id: String): Flow<Folder?> =
         folderDao.observeById(id).map { it?.toDomain() }
 
@@ -54,6 +57,8 @@ class NoteBucketRepository @Inject constructor(
     suspend fun deleteDraft() = draftDao.delete()
 
     suspend fun getAllFolders(): List<Folder> = folderDao.getAll().map { it.toDomain() }
+
+    suspend fun getAllHiddenFolders(): List<Folder> = folderDao.getAllHidden().map { it.toDomain() }
 
     suspend fun getFolder(id: String): Folder? = folderDao.getById(id)?.toDomain()
 

@@ -86,7 +86,7 @@ class HomeViewModel @Inject constructor(
 ) : ViewModel() {
 
     val tiles: StateFlow<List<FolderTile>> =
-        combine(repo.observeFolders(), repo.observeNoteCountsByFolder()) { folders, counts ->
+        combine(repo.observeVisibleFolders(), repo.observeNoteCountsByFolder()) { folders, counts ->
             val countMap = counts.associate { it.folderId to it.cnt }
             folders.map { f ->
                 FolderTile(
@@ -97,6 +97,12 @@ class HomeViewModel @Inject constructor(
                 )
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    init {
+        viewModelScope.launch {
+            router.seedDefaultFolders()
+        }
+    }
 
     fun createFolder(name: String, color: String) {
         if (name.isBlank()) return

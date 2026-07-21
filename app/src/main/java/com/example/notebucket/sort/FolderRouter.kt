@@ -24,7 +24,8 @@ data class RoutingCandidate(
 data class RoutingResult(
     val candidates: List<RoutingCandidate>,
     val needsDisambiguation: Boolean,
-    val embedding: FloatArray
+    val embedding: FloatArray,
+    val unsortedFolderId: String? = null
 )
 
 data class SearchResult(
@@ -92,19 +93,38 @@ class FolderRouter @Inject constructor(
         val best = scored[0]
         val second = scored.getOrNull(1)
 
+        val isUnsorted = best.folder.name.equals("Unsorted", ignoreCase = true)
+        val isHidden = best.folder.isHidden
         val aboveThreshold = best.similarity >= threshold
         val ambiguous = second != null &&
             aboveThreshold &&
             (best.similarity - second.similarity) <= DISAMBIGUATION_MARGIN
 
+        val needsDisambiguation = isUnsorted || isHidden || ambiguous || !aboveThreshold
+
         Log.d(TAG, "  best='${best.folder.name}' sim=${"%.4f".format(best.similarity)}" +
             (second?.let { " second='${it.folder.name}' sim=${"%.4f".format(it.similarity)}" } ?: "") +
-            " ambiguous=$ambiguous")
+            " ambiguous=$ambiguous needsDisambiguation=$needsDisambiguation")
+
+        val unsortedFolder = repo.getFolderByName("Unsorted") ?: createFolder("Unsorted")
+
+        val candidates = if (needsDisambiguation) {
+            val hidden = scored.filter { it.folder.isHidden }.take(2)
+            val bestVisible = scored.firstOrNull { !it.folder.isHidden && it.folder.name != "Unsorted" }
+            val merged = hidden.toMutableList()
+            if (bestVisible != null && bestVisible !in hidden) {
+                merged.add(bestVisible)
+            }
+            merged.take(3)
+        } else {
+            scored.take(2)
+        }
 
         return RoutingResult(
-            candidates = scored.take(2),
-            needsDisambiguation = ambiguous,
-            embedding = embedding
+            candidates = candidates,
+            needsDisambiguation = needsDisambiguation,
+            embedding = embedding,
+            unsortedFolderId = if (needsDisambiguation) unsortedFolder.id else null
         )
     }
 
@@ -133,7 +153,7 @@ class FolderRouter @Inject constructor(
         return best
     }
 
-    suspend fun createFolder(name: String, color: String = "teal"): Folder {
+    suspend fun createFolder(name: String, color: String = "teal", isHidden: Boolean = false): Folder {
         embedder.awaitLoaded()
         val nameEmb = embedder.embedNote(name)
         val folder = Folder(
@@ -142,11 +162,43 @@ class FolderRouter @Inject constructor(
             nameEmbedding = nameEmb,
             noteCount = 0,
             isUserRenamed = false,
-            color = color
+            color = color,
+            isHidden = isHidden
         )
         repo.insertFolder(folder)
-        Log.d(TAG, "NEW FOLDER '$name'")
+        Log.d(TAG, "NEW FOLDER '$name' hidden=$isHidden")
         return folder
+    }
+
+    suspend fun seedDefaultFolders() {
+        val existing = repo.getAllFolders().associateBy { it.name.lowercase() }
+
+        if (!existing.containsKey("unsorted")) {
+            createFolder("Unsorted", "teal", isHidden = false)
+        }
+
+        val hiddenFolders = listOf(
+            "Ideas" to "slate",
+            "Tasks" to "slate",
+            "Reference" to "slate",
+            "Personal" to "slate",
+            "Work" to "slate",
+            "Recipes & Cooking" to "slate",
+            "Code Snippets" to "slate",
+            "Bookmarks & Links" to "slate",
+            "Shopping Lists" to "slate",
+            "Meeting Notes" to "slate",
+            "Health & Fitness" to "slate",
+            "Finance & Budget" to "slate",
+            "Reading List" to "slate",
+            "DIY & Projects" to "slate",
+            "Travel Plans" to "slate"
+        )
+        for ((name, color) in hiddenFolders) {
+            if (!existing.containsKey(name.lowercase())) {
+                createFolder(name, color, isHidden = true)
+            }
+        }
     }
 
     suspend fun renameFolder(folderId: String, newName: String) {

@@ -48,4 +48,13 @@ interface FolderDao {
 
     @Query("SELECT COUNT(*) FROM folders")
     suspend fun count(): Int
+
+    @Query("SELECT COUNT(*) FROM folders WHERE isHidden = 1")
+    suspend fun hiddenCount(): Int
+
+    @Query("SELECT * FROM folders WHERE isHidden = 1")
+    suspend fun getAllHidden(): List<FolderEntity>
+
+    @Query("SELECT * FROM folders WHERE isHidden = 0 OR (isHidden = 1 AND noteCount > 0) ORDER BY createdAt DESC")
+    fun observeVisible(): Flow<List<FolderEntity>>
 }
