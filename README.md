@@ -4,7 +4,7 @@ On-device note organizer: BGE-small embeddings + llama.cpp route notes into
 folders by semantic similarity and power semantic search. 100% local — no
 cloud, no accounts, no analytics.
 
-**v0.2.0** (versionCode 2)
+**v0.3.0** (versionCode 3)
 
 ## What it is
 
@@ -12,7 +12,7 @@ A standalone Android app. You type or paste a note; an on-device embedding
 model (BGE-small-en-v1.5, 33M params) embeds it, cosine-scores it against
 each folder's name embedding, and files it (ambiguous matches show a
 disambiguation dialog; unmatched notes go to "Unsorted"). Attach images or
-files, dictate via voice, and bulk-move or bulk-delete notes across folders.
+files, and bulk-move or bulk-delete notes across folders.
 Drafts are crash-safe (persisted to Room on every keystroke, debounced 500ms)
 and commit automatically one minute after you background the app.
 
