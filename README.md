@@ -4,14 +4,17 @@ On-device note organizer: BGE-small embeddings + llama.cpp route notes into
 folders by semantic similarity and power semantic search. 100% local — no
 cloud, no accounts, no analytics.
 
+**v0.2.0** (versionCode 2)
+
 ## What it is
 
 A standalone Android app. You type or paste a note; an on-device embedding
-model (BGE-small-en-v1.5, 33M params) embeds it, cosine-sorts it against
-existing folder centroids, and files it (creating a new folder when nothing
-clears the threshold). Drafts are crash-safe (persisted to Room on every
-keystroke, debounced 500ms) and commit automatically one minute after you
-background the app.
+model (BGE-small-en-v1.5, 33M params) embeds it, cosine-scores it against
+each folder's name embedding, and files it (ambiguous matches show a
+disambiguation dialog; unmatched notes go to "Unsorted"). Attach images or
+files, dictate via voice, and bulk-move or bulk-delete notes across folders.
+Drafts are crash-safe (persisted to Room on every keystroke, debounced 500ms)
+and commit automatically one minute after you background the app.
 
 ## Prerequisites
 
@@ -78,30 +81,38 @@ supported — only arm64-v8a ABI is built.
 
 1. **Onboarding (first run only):** privacy explanation + on-device model
    load. Marked complete via DataStore; skipped on subsequent opens.
-2. **Home:** folder tiles (count + latest note preview). Search bar entry
-   at top. FAB → New note.
-3. **NoteInput:** type/paste, press Done. Draft persists to Room on every
-   keystroke (debounced 500ms). Background the app with an uncommitted
-   draft → WorkManager commits it after 1 minute.
+2. **Home:** color-coded folder tiles (count + latest note preview, 10
+   color options). Search bar entry at top. FAB → New note.
+3. **NoteInput:** type/paste text, attach images/files via picker, or
+   dictate via voice (Android SpeechRecognizer). Press Done to embed and
+   route. Draft persists to Room on every keystroke (debounced 500ms).
+   Background the app with an uncommitted draft → WorkManager commits it
+   after 1 minute.
 4. **Folder Detail:** reverse-chrono note list, or grid for wallpaper-like
    folders (heuristic: name matches wallpaper/image/photo/pic, or >50% of
-   notes are image-URL extensions). Rename folder via the edit icon.
-5. **Search:** semantic search with folder filter + date preset filters
-   (All / Past week / Past month / Past year). Top-5 results.
-6. **Note Detail:** full text, folder link, timestamp, delete + recategorize.
-7. **Settings:** threshold slider (default 0.55), storage stats, model
-   reload, clear all data.
+   notes are image-URL extensions). Rename, recolor, or delete folder.
+   Multi-select notes for bulk move or bulk delete.
+5. **Search:** semantic search with folder filter + date range filters
+   (All time / Past week / Past month / Past year / custom range).
+   Top-5 results ranked by cosine similarity with a relative margin floor.
+6. **Note Detail:** full text, inline editing, folder link, timestamp,
+   attachments (image thumbnails, file cards), delete + recategorize.
+7. **Settings:** threshold slider (default 0.55), theme mode (System /
+   Light / Dark), hidden folder management, model reload, storage stats
+   (note/folder count, DB size), clear all data.
 
 ## Architecture
 
 ```
 Note text → BGE-small embed (llama.cpp JNI, 384-dim, L2-normalized)
-          → cosine vs each folder centroid (Room)
-          → max sim ≥ threshold T → assign + incrementally update centroid
-          → no match → create new folder (KeyBERT-style crude name)
+          → cosine vs each folder's nameEmbedding (Room)
+          → max sim ≥ threshold T → assign to that folder
+          → ambiguous (margin ≤ 0.03) or unsorted → disambiguation dialog
+          → no match above threshold → file to "Unsorted"
 
 Search query → BGE embed (retrieval prefix) → cosine vs all note
-             embeddings → top-5, pre-filtered by folder/date
+             embeddings → top-5, pre-filtered by folder/date, relative
+             margin floor (topSim − 0.25, min 0.35)
 
 Draft lifecycle:
   keystroke → debounced 500ms → Room drafts table
@@ -110,6 +121,13 @@ Draft lifecycle:
                                  WorkManager one-shot (1 min delay)
   reopen < 1 min               → cancel work, restore draft
   reopen with stale draft      → commit on next open
+
+Attachment lifecycle:
+  pick image/file → copy to internal storage (attachments/{noteId}/)
+  display inline  → Coil thumbnails for images, file cards for others
+
+Voice lifecycle:
+  tap mic → Android SpeechRecognizer → transcribed text appended to note
 ```
 
 ## Tech stack
@@ -118,16 +136,18 @@ Draft lifecycle:
 |---|---|
 | Platform | Native Android (Kotlin) |
 | Min SDK | Android 12 (API 31) |
-| UI | Jetpack Compose (Bom 2026.02.01), Material 3 |
+| UI | Jetpack Compose (BOM 2026.02.01), Material 3 |
 | DI | Hilt 2.60.1 |
 | Navigation | navigation-compose 2.8.5 |
-| Persistence | Room 2.7.2 (folders, notes, drafts; embeddings as BLOB) |
-| Settings | DataStore Preferences |
-| Background work | WorkManager + ProcessLifecycleObserver |
+| Persistence | Room 2.7.2 (folders, notes, drafts, attachments; embeddings as BLOB) |
+| Settings | DataStore Preferences 1.1.1 |
+| Background work | WorkManager 2.10.0 + ProcessLifecycleObserver |
+| Image loading | Coil 2.7.0 (Compose) |
+| Voice input | Android SpeechRecognizer |
 | Embedding model | BAAI/bge-small-en-v1.5 (33M, 384-dim, Apache-2.0) |
-| Inference runtime | llama.cpp via NDK + CMake (git submodule), arm64-v8a, JNI |
+| Inference runtime | llama.cpp via NDK 28.2 + CMake 3.22.1 (git submodule), arm64-v8a, JNI |
 | Model format | GGUF Q8_0 (~33MB) bundled in APK assets |
-| Sensitive permissions | None |
+| Permissions | RECORD_AUDIO, INTERNET (voice input fallback) |
 
 ## Key files
 
@@ -137,12 +157,20 @@ Draft lifecycle:
 | `app/src/main/cpp/CMakeLists.txt` | CMake config, builds llama.cpp + libbge.so |
 | `ai/NativeBridge.kt` | Kotlin JNI declarations |
 | `ai/BgeEmbedder.kt` | Asset copy + embedNote/embedQuery + load state flow |
-| `sort/FolderRouter.kt` | Centroid routing + threshold + KeyBERT naming + search + recategorize |
+| `sort/FolderRouter.kt` | Name-embedding routing + threshold + search + recategorize + bulk ops |
 | `sort/Folder.kt`, `sort/Note.kt` | Domain models |
-| `data/NoteBucketDatabase.kt` | Room database |
-| `data/dao/*` | FolderDao, NoteDao, DraftDao |
+| `data/NoteBucketDatabase.kt` | Room database (v5, 4 tables) |
+| `data/dao/FolderDao.kt` | Folder CRUD + embedding updates |
+| `data/dao/NoteDao.kt` | Note CRUD + bulk operations |
+| `data/dao/DraftDao.kt` | Singleton draft persistence |
+| `data/dao/AttachmentDao.kt` | Attachment CRUD |
+| `data/entity/FolderEntity.kt` | Room entity: id, name, nameEmbedding, noteCount, color, isHidden |
+| `data/entity/NoteEntity.kt` | Room entity: id, text, embedding, folderId, timestamp |
+| `data/entity/DraftEntity.kt` | Room entity: singleton draft with updatedAt |
+| `data/entity/AttachmentEntity.kt` | Room entity: id, noteId, fileName, mimeType, filePath |
 | `data/NoteBucketRepository.kt` | Single data entry point |
-| `data/SettingsRepository.kt` | DataStore-backed onboarding flag + threshold |
+| `data/SettingsRepository.kt` | DataStore-backed onboarding flag + threshold + theme |
+| `data/AttachmentStorage.kt` | File-based attachment I/O (internal storage) |
 | `data/mapper/Mappers.kt` | Entity ↔ domain + FloatArray ↔ ByteArray |
 | `di/*Module.kt` | Hilt modules (Database, WorkManager, DataStore) |
 | `work/DraftCommitWorker.kt` | HiltWorker that commits stale drafts |
@@ -151,12 +179,26 @@ Draft lifecycle:
 | `MainActivity.kt` | @AndroidEntryPoint, edge-to-edge, theme |
 | `ui/nav/Routes.kt` | Route constants |
 | `ui/nav/NoteBucketNavGraph.kt` | NavHost + onboarding-aware start destination |
-| `ui/screens/*` | Onboarding, NoteInput, Home, FolderDetail, Search, Settings, NoteDetail |
-| `ui/theme/*` | Material 3 color scheme + theme |
+| `ui/screens/OnboardingScreen.kt` | Privacy intro + model load progress |
+| `ui/screens/NoteInputScreen.kt` | Note creation + attachments + voice input |
+| `ui/screens/HomeScreen.kt` | Folder grid + search entry + FAB |
+| `ui/screens/FolderDetailScreen.kt` | Note list/grid + rename + bulk operations |
+| `ui/screens/SearchScreen.kt` | Semantic search + folder/date filters |
+| `ui/screens/NoteDetailScreen.kt` | View/edit/delete/recategorize + attachments |
+| `ui/screens/SettingsScreen.kt` | Threshold, theme, hidden folders, storage, clear |
+| `ui/screens/VoiceTranscriber.kt` | Android SpeechRecognizer wrapper |
+| `ui/theme/Theme.kt` | Material 3 dynamic color + light/dark fallback |
+| `ui/theme/Color.kt` | Teal-centric color palette |
+| `ui/theme/FolderPalette.kt` | 10 folder color options |
 | `PRD.md` | Product requirements (locked contract) |
 | `AGENTS.md` | Agent rules |
 
 ## Permissions
 
-None. No INTERNET, no storage, no notifications, no foreground service.
-PRD §4: privacy-first, no sensitive permissions.
+| Permission | Reason |
+|---|---|
+| `RECORD_AUDIO` | Voice dictation via Android SpeechRecognizer |
+| `INTERNET` | SpeechRecognizer cloud fallback (most devices require network) |
+
+Core features (note taking, embedding, search, attachments) are fully offline.
+No storage, notifications, or foreground service permissions.
