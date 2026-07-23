@@ -83,8 +83,8 @@ supported — only arm64-v8a ABI is built.
    load. Marked complete via DataStore; skipped on subsequent opens.
 2. **Home:** color-coded folder tiles (count + latest note preview, 10
    color options). Search bar entry at top. FAB → New note.
-3. **NoteInput:** type/paste text, attach images/files via picker, or
-   dictate via voice (Android SpeechRecognizer). Press Done to embed and
+3. **NoteInput:** type/paste text, attach images/files via picker.
+   Press Done to embed and
    route. Draft persists to Room on every keystroke (debounced 500ms).
    Background the app with an uncommitted draft → WorkManager commits it
    after 1 minute.
@@ -143,11 +143,9 @@ Voice lifecycle:
 | Settings | DataStore Preferences 1.1.1 |
 | Background work | WorkManager 2.10.0 + ProcessLifecycleObserver |
 | Image loading | Coil 2.7.0 (Compose) |
-| Voice input | Android SpeechRecognizer |
 | Embedding model | BAAI/bge-small-en-v1.5 (33M, 384-dim, Apache-2.0) |
 | Inference runtime | llama.cpp via NDK 28.2 + CMake 3.22.1 (git submodule), arm64-v8a, JNI |
 | Model format | GGUF Q8_0 (~33MB) bundled in APK assets |
-| Permissions | RECORD_AUDIO, INTERNET (voice input fallback) |
 
 ## Key files
 
@@ -180,13 +178,12 @@ Voice lifecycle:
 | `ui/nav/Routes.kt` | Route constants |
 | `ui/nav/NoteBucketNavGraph.kt` | NavHost + onboarding-aware start destination |
 | `ui/screens/OnboardingScreen.kt` | Privacy intro + model load progress |
-| `ui/screens/NoteInputScreen.kt` | Note creation + attachments + voice input |
+| `ui/screens/NoteInputScreen.kt` | Note creation + attachments |
 | `ui/screens/HomeScreen.kt` | Folder grid + search entry + FAB |
 | `ui/screens/FolderDetailScreen.kt` | Note list/grid + rename + bulk operations |
 | `ui/screens/SearchScreen.kt` | Semantic search + folder/date filters |
 | `ui/screens/NoteDetailScreen.kt` | View/edit/delete/recategorize + attachments |
 | `ui/screens/SettingsScreen.kt` | Threshold, theme, hidden folders, storage, clear |
-| `ui/screens/VoiceTranscriber.kt` | Android SpeechRecognizer wrapper |
 | `ui/theme/Theme.kt` | Material 3 dynamic color + light/dark fallback |
 | `ui/theme/Color.kt` | Teal-centric color palette |
 | `ui/theme/FolderPalette.kt` | 10 folder color options |
@@ -194,11 +191,6 @@ Voice lifecycle:
 | `AGENTS.md` | Agent rules |
 
 ## Permissions
-
-| Permission | Reason |
-|---|---|
-| `RECORD_AUDIO` | Voice dictation via Android SpeechRecognizer |
-| `INTERNET` | SpeechRecognizer cloud fallback (most devices require network) |
 
 Core features (note taking, embedding, search, attachments) are fully offline.
 No storage, notifications, or foreground service permissions.

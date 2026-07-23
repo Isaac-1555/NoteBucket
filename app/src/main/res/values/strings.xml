@@ -24,8 +24,6 @@
     <string name="onboarding_features_title">Everything you need</string>
     <string name="onboarding_feature_search">Semantic Search</string>
     <string name="onboarding_feature_search_body">Find notes by meaning, not just keywords</string>
-    <string name="onboarding_feature_voice">Voice Dictation</string>
-    <string name="onboarding_feature_voice_body">Speak your notes hands-free</string>
     <string name="onboarding_feature_attachments">Attachments</string>
     <string name="onboarding_feature_attachments_body">Add images and files to notes</string>
     <string name="onboarding_feature_drafts">Draft Protection</string>

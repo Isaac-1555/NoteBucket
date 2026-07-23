@@ -1,6 +1,5 @@
 package com.example.notebucket.ui.screens
 
-import android.Manifest
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -35,8 +34,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -53,7 +50,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -113,7 +109,6 @@ data class NoteInputState(
     val snackbar: String? = null,
     val error: String? = null,
     val pendingAttachments: List<PendingAttachment> = emptyList(),
-    val isListening: Boolean = false,
     val disambiguationResult: RoutingResult? = null,
     val pendingText: String = "",
     val showCreateFolderInPicker: Boolean = false
@@ -237,28 +232,6 @@ class NoteInputViewModel @Inject constructor(
         AttachmentStorage.deleteFile(attachment.filePath)
         _state.value = _state.value.copy(
             pendingAttachments = _state.value.pendingAttachments.filter { it.id != id }
-        )
-    }
-
-    fun setListening(listening: Boolean) {
-        _state.value = _state.value.copy(isListening = listening)
-    }
-
-    fun onVoiceError(message: String) {
-        _state.value = _state.value.copy(
-            isListening = false,
-            snackbar = message
-        )
-    }
-
-    fun appendText(text: String) {
-        val current = _state.value.textFieldValue
-        val newText = current.text + text
-        _state.value = _state.value.copy(
-            textFieldValue = TextFieldValue(
-                text = newText,
-                selection = androidx.compose.ui.text.TextRange(newText.length)
-            )
         )
     }
 
@@ -411,11 +384,6 @@ fun NoteInputScreen(navController: NavHostController) {
     val context = LocalContext.current
     val focusRequester = remember { FocusRequester() }
 
-    var hasAudioPermission by remember { mutableStateOf(false) }
-    var showPermissionRationale by remember { mutableStateOf(false) }
-
-    val voiceTranscriber = remember { VoiceTranscriber(context) }
-
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri: Uri? ->
@@ -426,17 +394,6 @@ fun NoteInputScreen(navController: NavHostController) {
         contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
         uri?.let { vm.addAttachment(context, it) }
-    }
-
-    val permissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        hasAudioPermission = granted
-        if (granted) {
-            startVoiceRecognition(voiceTranscriber, vm)
-        } else {
-            showPermissionRationale = true
-        }
     }
 
     LaunchedEffect(Unit) {
@@ -461,10 +418,6 @@ fun NoteInputScreen(navController: NavHostController) {
             onConfirmCreateFolder = vm::onCreateFolderInPicker,
             onDismissCreateFolder = vm::dismissCreateFolderInPicker
         )
-    }
-
-    DisposableEffect(Unit) {
-        onDispose { voiceTranscriber.destroy() }
     }
 
     Scaffold(
@@ -589,39 +542,6 @@ fun NoteInputScreen(navController: NavHostController) {
                     )
                 }
 
-                IconButton(
-                    onClick = {
-                        if (state.isListening) {
-                            voiceTranscriber.stopListening()
-                            vm.setListening(false)
-                        } else if (!VoiceTranscriber.isAvailable(context)) {
-                            vm.onVoiceError("Voice recognition not available on this device.")
-                        } else if (hasAudioPermission) {
-                            startVoiceRecognition(voiceTranscriber, vm)
-                        } else {
-                            permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
-                        }
-                    },
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(RoundedCornerShape(22.dp))
-                        .background(
-                            if (state.isListening)
-                                MaterialTheme.colorScheme.errorContainer
-                            else
-                                MaterialTheme.colorScheme.surfaceVariant
-                        )
-                ) {
-                    Icon(
-                        if (state.isListening) Icons.Default.MicOff else Icons.Default.Mic,
-                        contentDescription = if (state.isListening) "Stop recording" else "Voice input",
-                        tint = if (state.isListening)
-                            MaterialTheme.colorScheme.error
-                        else
-                            MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
             }
 
             Button(
@@ -652,23 +572,6 @@ fun NoteInputScreen(navController: NavHostController) {
             }
         }
     }
-}
-
-private fun startVoiceRecognition(transcriber: VoiceTranscriber, vm: NoteInputViewModel) {
-    vm.setListening(true)
-    transcriber.startListening(
-        onResult = { text ->
-            vm.appendText(" $text")
-            vm.setListening(false)
-        },
-        onPartial = { },
-        onEndOfSpeech = {
-            vm.setListening(false)
-        },
-        onError = { message ->
-            vm.onVoiceError(message)
-        }
-    )
 }
 
 @Composable

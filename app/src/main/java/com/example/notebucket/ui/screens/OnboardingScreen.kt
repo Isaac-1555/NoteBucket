@@ -24,7 +24,6 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FolderOpen
-import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.NoAccounts
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shield
@@ -390,11 +389,6 @@ private fun OnboardingFeatures() {
                 icon = Icons.Default.Search,
                 title = stringResource(R.string.onboarding_feature_search),
                 body = stringResource(R.string.onboarding_feature_search_body)
-            )
-            FeatureCard(
-                icon = Icons.Default.Mic,
-                title = stringResource(R.string.onboarding_feature_voice),
-                body = stringResource(R.string.onboarding_feature_voice_body)
             )
             FeatureCard(
                 icon = Icons.Default.AttachFile,
