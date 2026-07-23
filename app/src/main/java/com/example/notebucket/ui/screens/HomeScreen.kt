@@ -63,6 +63,7 @@ import com.example.notebucket.data.dao.FolderCount
 import com.example.notebucket.sort.FolderRouter
 import com.example.notebucket.ui.nav.Routes
 import com.example.notebucket.ui.theme.FolderPalette
+import com.example.notebucket.ui.theme.glow
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -218,10 +219,13 @@ private fun FolderTileCard(tile: FolderTile, onClick: () -> Unit) {
         FolderPalette.resolve(tile.color, isDark)
     }
 
+    val isUnsorted = tile.name.equals("Unsorted", ignoreCase = true) && tile.noteCount > 0
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .height(100.dp)
+            .then(if (isUnsorted) Modifier.glow(folderColor) else Modifier)
             .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant
