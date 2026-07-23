@@ -99,7 +99,7 @@ class NoteDetailViewModel @Inject constructor(
     private val noteId: String = savedState.get<String>(Routes.NOTE_DETAIL_ARG).orEmpty()
 
     val state: StateFlow<NoteDetailUiState> =
-        combine(repo.observeNote(noteId), repo.observeFolders(), repo.observeAttachments(noteId)) { note, folders, attachments ->
+        combine(repo.observeNote(noteId), repo.observeVisibleFolders(), repo.observeAttachments(noteId)) { note, folders, attachments ->
             NoteDetailUiState(
                 note = note,
                 folder = folders.find { it.id == note?.folderId },

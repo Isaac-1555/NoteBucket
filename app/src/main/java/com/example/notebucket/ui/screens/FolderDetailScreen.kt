@@ -105,7 +105,7 @@ class FolderDetailViewModel @Inject constructor(
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FolderDetailUiState())
 
     val allFolders: StateFlow<List<Folder>> =
-        repo.observeFolders().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        repo.observeVisibleFolders().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     private val _isSelectMode = MutableStateFlow(false)
     val isSelectMode: StateFlow<Boolean> = _isSelectMode.asStateFlow()
