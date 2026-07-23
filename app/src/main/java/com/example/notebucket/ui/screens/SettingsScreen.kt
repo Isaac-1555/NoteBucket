@@ -5,8 +5,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -128,6 +130,12 @@ class SettingsViewModel @Inject constructor(
             embedder.unload()
             embedder.loadModel()
             refresh()
+        }
+    }
+
+    fun replayOnboarding() {
+        viewModelScope.launch {
+            settings.resetOnboardingDone()
         }
     }
 
@@ -374,6 +382,20 @@ fun SettingsScreen(navController: NavHostController) {
                     text = "Current: ${"%.2f".format(state.threshold)}",
                     style = MaterialTheme.typography.bodyMedium
                 )
+
+                Spacer(Modifier.height(8.dp))
+
+                OutlinedButton(
+                    onClick = {
+                        vm.replayOnboarding()
+                        navController.navigate(com.example.notebucket.ui.nav.Routes.ONBOARDING) {
+                            popUpTo(com.example.notebucket.ui.nav.Routes.HOME) { inclusive = true }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(stringResource(R.string.settings_replay_onboarding))
+                }
             }
 
             state.error?.let {

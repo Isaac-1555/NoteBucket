@@ -35,6 +35,10 @@ class SettingsRepository @Inject constructor(
         store.edit { it[keyOnboardingDone] = done }
     }
 
+    suspend fun resetOnboardingDone() {
+        setOnboardingDone(false)
+    }
+
     fun observeThreshold(): Flow<Float> =
         store.data.map { it[keyThreshold] ?: FolderRouter.DEFAULT_THRESHOLD }
 

@@ -2,12 +2,39 @@
     <string name="app_name">NoteBucket</string>
 
     <string name="onboarding_title">NoteBucket</string>
-    <string name="onboarding_privacy_heading">Private by design</string>
-    <string name="onboarding_privacy_body">Notes never leave your device. No cloud, no accounts, no analytics. An on-device embedding model (BGE-small) sorts your notes into folders and powers semantic search — all locally.</string>
-    <string name="onboarding_model_heading">Loading on-device model…</string>
-    <string name="onboarding_model_body">BGE-small-en-v1.5 (~33 MB) is being unpacked and loaded into native memory. This happens once; subsequent opens are instant.</string>
+    <string name="onboarding_skip">Skip</string>
     <string name="onboarding_continue">Continue</string>
     <string name="onboarding_retry">Retry</string>
+
+    <string name="onboarding_welcome_tagline">Your notes. Your device. Your AI.</string>
+    <string name="onboarding_welcome_subtitle">A local-first note organizer powered by on-device AI.</string>
+
+    <string name="onboarding_privacy_title">100%% Private</string>
+    <string name="onboarding_privacy_cloud">No cloud. No servers.</string>
+    <string name="onboarding_privacy_accounts">No accounts. No sign-ups.</string>
+    <string name="onboarding_privacy_analytics">No analytics. No tracking.</string>
+    <string name="onboarding_privacy_footer">Your notes never leave your device. Period.</string>
+
+    <string name="onboarding_how_title">Write. Done. Sorted.</string>
+    <string name="onboarding_how_body">An on-device AI model reads your note and instantly files it into the right folder. No manual tagging needed.</string>
+    <string name="onboarding_how_step1">Write</string>
+    <string name="onboarding_how_step2">AI reads</string>
+    <string name="onboarding_how_step3">Auto-filed</string>
+
+    <string name="onboarding_features_title">Everything you need</string>
+    <string name="onboarding_feature_search">Semantic Search</string>
+    <string name="onboarding_feature_search_body">Find notes by meaning, not just keywords</string>
+    <string name="onboarding_feature_voice">Voice Dictation</string>
+    <string name="onboarding_feature_voice_body">Speak your notes hands-free</string>
+    <string name="onboarding_feature_attachments">Attachments</string>
+    <string name="onboarding_feature_attachments_body">Add images and files to notes</string>
+    <string name="onboarding_feature_drafts">Draft Protection</string>
+    <string name="onboarding_feature_drafts_body">Notes survive crashes and restarts</string>
+
+    <string name="onboarding_ready_title">All set!</string>
+    <string name="onboarding_model_loading">Loading AI model…</string>
+    <string name="onboarding_model_ready">AI model ready</string>
+    <string name="onboarding_get_started">Get Started</string>
 
     <string name="home_title">NoteBucket</string>
     <string name="home_folders_section">Folders</string>
@@ -77,6 +104,7 @@
     <string name="settings_model_status_loaded">Model: loaded</string>
     <string name="settings_model_status_not_loaded">Model: not loaded</string>
     <string name="settings_model_reload">Reload model</string>
+    <string name="settings_replay_onboarding">Replay onboarding</string>
 
     <string name="settings_section_hidden_folders">Hidden Folders</string>
     <string name="settings_hidden_folders_help">Always considered when sorting. Appear as suggestions when no strong match is found.</string>
