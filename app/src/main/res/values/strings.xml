@@ -84,8 +84,8 @@
     <string name="settings_theme_system">System default</string>
     <string name="settings_theme_light">Light</string>
     <string name="settings_theme_dark">Dark</string>
-    <string name="settings_threshold">Folder sensitivity (threshold)</string>
-    <string name="settings_threshold_help">Higher = more folders (strict match). Lower = fewer folders (loose match). Default 0.55.</string>
+    <string name="settings_threshold">Auto-file threshold</string>
+    <string name="settings_threshold_help">Applies only to borderline matches (top folders within 2–5%% of each other). Higher = asks you before filing. Lower = auto-files more. Clear winners (5%%+ gap) always auto-file; near-ties (2%% or less) always ask. Default 0.55.</string>
     <string name="settings_section_storage">Storage</string>
     <string name="settings_section_model">Model</string>
     <string name="settings_section_clear">Clear all data</string>

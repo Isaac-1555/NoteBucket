@@ -16,7 +16,9 @@ data class FolderEntity(
     val isUserRenamed: Boolean = false,
     val createdAt: Long,
     val color: String = "teal",
-    val isHidden: Boolean = false
+    val isHidden: Boolean = false,
+    val centroidEmbedding: ByteArray? = null,
+    val learnedCount: Int = 0
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true

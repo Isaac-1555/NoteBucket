@@ -34,6 +34,9 @@ interface FolderDao {
     @Query("UPDATE folders SET nameEmbedding = :embedding WHERE id = :id")
     suspend fun updateEmbedding(id: String, embedding: ByteArray)
 
+    @Query("UPDATE folders SET centroidEmbedding = :centroid, learnedCount = :learnedCount WHERE id = :id")
+    suspend fun updateLearning(id: String, centroid: ByteArray, learnedCount: Int)
+
     @Query("UPDATE folders SET noteCount = :count WHERE id = :id")
     suspend fun updateNoteCount(id: String, count: Int)
 

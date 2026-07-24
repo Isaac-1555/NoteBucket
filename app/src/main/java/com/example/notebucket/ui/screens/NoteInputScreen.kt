@@ -44,8 +44,10 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -63,6 +65,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -111,7 +114,10 @@ data class NoteInputState(
     val pendingAttachments: List<PendingAttachment> = emptyList(),
     val disambiguationResult: RoutingResult? = null,
     val pendingText: String = "",
-    val showCreateFolderInPicker: Boolean = false
+    val showCreateFolderInPicker: Boolean = false,
+    val savedNoteId: String? = null,
+    val showChangeFolderDialog: Boolean = false,
+    val allFolders: List<Folder> = emptyList()
 ) {
     val text: String get() = textFieldValue.text
     val isNotBlank: Boolean get() = text.isNotBlank()
@@ -333,12 +339,47 @@ class NoteInputViewModel @Inject constructor(
             pendingAttachments = emptyList(),
             disambiguationResult = null,
             pendingText = "",
-            snackbar = "Filed in \"${result.folder.name}\""
+            snackbar = "Filed in \"${result.folder.name}\"",
+            savedNoteId = noteId
         )
     }
 
     fun consumeSnackbar() {
         _state.value = _state.value.copy(snackbar = null)
+    }
+
+    fun onChangeFolderRequested() {
+        if (_state.value.savedNoteId == null) return
+        viewModelScope.launch {
+            val folders = repo.getAllFolders()
+            _state.value = _state.value.copy(
+                allFolders = folders,
+                showChangeFolderDialog = true
+            )
+        }
+    }
+
+    fun onChangeFolderDismissed() {
+        _state.value = _state.value.copy(showChangeFolderDialog = false)
+    }
+
+    fun onChangeFolderChosen(folderId: String) {
+        val noteId = _state.value.savedNoteId ?: return
+        _state.value = _state.value.copy(showChangeFolderDialog = false)
+        viewModelScope.launch {
+            try {
+                router.recategorize(noteId, folderId)
+                val folder = repo.getFolder(folderId)
+                _state.value = _state.value.copy(
+                    snackbar = "Moved to \"${folder?.name ?: "folder"}\"",
+                    savedNoteId = null
+                )
+            } catch (t: Throwable) {
+                _state.value = _state.value.copy(
+                    error = t.message ?: "Failed to move note"
+                )
+            }
+        }
     }
 
     private suspend fun maybeRestoreOrCommitDraft() {
@@ -382,6 +423,7 @@ fun NoteInputScreen(navController: NavHostController) {
     val snackbarHost = remember { SnackbarHostState() }
     val scrollState = rememberScrollState()
     val context = LocalContext.current
+    val keyboardController = LocalSoftwareKeyboardController.current
     val focusRequester = remember { FocusRequester() }
 
     val imagePickerLauncher = rememberLauncherForActivityResult(
@@ -401,8 +443,15 @@ fun NoteInputScreen(navController: NavHostController) {
     }
 
     LaunchedEffect(state.snackbar) {
-        state.snackbar?.let {
-            snackbarHost.showSnackbar(it)
+        state.snackbar?.let { message ->
+            val result = snackbarHost.showSnackbar(
+                message = message,
+                actionLabel = if (state.savedNoteId != null) "Change" else null,
+                duration = SnackbarDuration.Long
+            )
+            if (result == SnackbarResult.ActionPerformed) {
+                vm.onChangeFolderRequested()
+            }
             vm.consumeSnackbar()
         }
     }
@@ -417,6 +466,14 @@ fun NoteInputScreen(navController: NavHostController) {
             onCreateFolder = vm::showCreateFolderInPicker,
             onConfirmCreateFolder = vm::onCreateFolderInPicker,
             onDismissCreateFolder = vm::dismissCreateFolderInPicker
+        )
+    }
+
+    if (state.showChangeFolderDialog) {
+        ChangeFolderDialog(
+            folders = state.allFolders,
+            onFolderChosen = vm::onChangeFolderChosen,
+            onDismiss = vm::onChangeFolderDismissed
         )
     }
 
@@ -545,7 +602,10 @@ fun NoteInputScreen(navController: NavHostController) {
             }
 
             Button(
-                onClick = { vm.onDone() },
+                onClick = {
+                    keyboardController?.hide()
+                    vm.onDone()
+                },
                 enabled = state.isNotBlank && !state.isCommitting,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -698,6 +758,51 @@ private fun FolderPickDialog(
             onConfirm = onConfirmCreateFolder
         )
     }
+}
+
+@Composable
+private fun ChangeFolderDialog(
+    folders: List<Folder>,
+    onFolderChosen: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Move to folder") },
+        text = {
+            LazyColumn(modifier = Modifier.fillMaxWidth()) {
+                items(folders, key = { it.id }) { folder ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onFolderChosen(folder.id) }
+                            .padding(vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(12.dp)
+                                .clip(CircleShape)
+                                .background(FolderPalette.resolve(folder.color, isDark))
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            text = folder.name,
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }
 
 @Composable

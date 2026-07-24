@@ -9,5 +9,9 @@ data class Folder(
     var noteCount: Int = 0,
     var isUserRenamed: Boolean = false,
     var color: String = "teal",
-    var isHidden: Boolean = false
-)
+    var isHidden: Boolean = false,
+    var centroidEmbedding: FloatArray? = null,
+    var learnedCount: Int = 0
+) {
+    val routingEmbedding: FloatArray? get() = centroidEmbedding ?: nameEmbedding
+}

@@ -50,8 +50,15 @@ class FolderRouter @Inject constructor(
 
         Log.d(TAG, "commit: text='${text.take(60)}' norm=${sqrt(embedding.fold(0f) { a, v -> a + v * v })} first5=[${embedding.take(5).joinToString(",") { "%.4f".format(it) }}]")
 
-        val best = scoreFolders(embedding)
+        val ranked = rankFolders(embedding)
+        val best = ranked.firstOrNull()
         if (best != null && best.second >= threshold) {
+            val gap = ranked.getOrNull(1)?.let { best.second - it.second } ?: Float.MAX_VALUE
+            if (gap > AMBIGUOUS_MARGIN) {
+                learn(embedding, confirmedFolderId = best.first.id)
+            } else {
+                Log.d(TAG, "  ambiguous (gap=${"%.4f".format(gap)}), skipping learning")
+            }
             return assignToFolder(best.first, text, embedding, best.second)
         }
 
@@ -77,8 +84,8 @@ class FolderRouter @Inject constructor(
         }
 
         val scored = folders.mapNotNull { folder ->
-            val nameEmb = folder.nameEmbedding ?: return@mapNotNull null
-            RoutingCandidate(folder, cosine(embedding, nameEmb))
+            val routingEmb = folder.routingEmbedding ?: return@mapNotNull null
+            RoutingCandidate(folder, cosine(embedding, routingEmb))
         }.sortedByDescending { it.similarity }
 
         if (scored.isEmpty()) {
@@ -93,17 +100,20 @@ class FolderRouter @Inject constructor(
         val best = scored[0]
         val second = scored.getOrNull(1)
 
-        val isUnsorted = best.folder.name.equals("Unsorted", ignoreCase = true)
-        val isHidden = best.folder.isHidden
+        // Decision rules:
+        //   gap >= CLEAR_MARGIN (5%)      -> clear winner, auto-sort (overrides floor)
+        //   gap <= AMBIGUOUS_MARGIN (2%)  -> suggestions
+        //   between                       -> auto-sort only if best >= threshold
         val aboveThreshold = best.similarity >= threshold
-        val ambiguous = second != null &&
-            aboveThreshold &&
-            (best.similarity - second.similarity) <= DISAMBIGUATION_MARGIN
+        val gap = if (second != null) best.similarity - second.similarity else Float.MAX_VALUE
+        val clearWinner = gap >= CLEAR_MARGIN
+        val ambiguous = gap <= AMBIGUOUS_MARGIN
 
-        val needsDisambiguation = isUnsorted || isHidden || ambiguous || !aboveThreshold
+        val needsDisambiguation = !clearWinner && (ambiguous || !aboveThreshold)
 
         Log.d(TAG, "  best='${best.folder.name}' sim=${"%.4f".format(best.similarity)}" +
             (second?.let { " second='${it.folder.name}' sim=${"%.4f".format(it.similarity)}" } ?: "") +
+            " gap=${"%.4f".format(gap)} threshold=$threshold clearWinner=$clearWinner" +
             " ambiguous=$ambiguous needsDisambiguation=$needsDisambiguation")
 
         val unsortedFolder = repo.getFolderByName("Unsorted") ?: createFolder("Unsorted")
@@ -135,22 +145,52 @@ class FolderRouter @Inject constructor(
     ): AssignmentResult {
         val folder = repo.getFolder(folderId)
             ?: repo.getFolderByName("Unsorted") ?: createFolder("Unsorted")
+        learn(embedding, confirmedFolderId = folder.id)
         return assignToFolder(folder, text, embedding)
     }
 
-    private suspend fun scoreFolders(embedding: FloatArray): Pair<Folder, Float>? {
-        val folders = repo.getAllFolders()
-        if (folders.isEmpty()) return null
-
-        val scored = folders.mapNotNull { folder ->
-            val nameEmb = folder.nameEmbedding ?: return@mapNotNull null
-            folder to cosine(embedding, nameEmb)
+    /**
+     * Small RL: folder routing centroid drifts toward embeddings of notes the
+     * user files (or confirms) there; explicit correction away from a folder
+     * pushes its centroid slightly away from that note. "Unsorted" never learns.
+     */
+    private suspend fun learn(
+        embedding: FloatArray,
+        confirmedFolderId: String? = null,
+        rejectedFolderId: String? = null
+    ) {
+        confirmedFolderId?.let { id ->
+            val folder = repo.getFolder(id)
+            if (folder != null && !folder.name.equals("Unsorted", ignoreCase = true)) {
+                val base = folder.routingEmbedding
+                if (base != null && base.size == embedding.size) {
+                    val n = folder.learnedCount
+                    val updated = FloatArray(base.size) { i -> (base[i] * n + embedding[i]) / (n + 1) }
+                    repo.updateFolderLearning(id, normalize(updated), n + 1)
+                    Log.d(TAG, "  LEARN confirm '${folder.name}' n=${n + 1}")
+                }
+            }
         }
-        if (scored.isEmpty()) return null
+        rejectedFolderId?.let { id ->
+            if (id == confirmedFolderId) return@let
+            val folder = repo.getFolder(id)
+            if (folder != null && !folder.name.equals("Unsorted", ignoreCase = true)) {
+                val base = folder.routingEmbedding
+                if (base != null && base.size == embedding.size) {
+                    val updated = FloatArray(base.size) { i -> base[i] - REJECTION_RATE * embedding[i] }
+                    repo.updateFolderLearning(id, normalize(updated), maxOf(folder.learnedCount, 1))
+                    Log.d(TAG, "  LEARN reject '${folder.name}'")
+                }
+            }
+        }
+    }
 
-        val best = scored.maxByOrNull { it.second }!!
-        Log.d(TAG, "  best match: '${best.first.name}' sim=${"%.4f".format(best.second)}")
-        return best
+    private suspend fun rankFolders(embedding: FloatArray): List<Pair<Folder, Float>> {
+        val folders = repo.getAllFolders()
+        return folders.mapNotNull { folder ->
+            val routingEmb = folder.routingEmbedding ?: return@mapNotNull null
+            folder to cosine(embedding, routingEmb)
+        }.sortedByDescending { it.second }
     }
 
     suspend fun createFolder(name: String, color: String = "teal", isHidden: Boolean = false): Folder {
@@ -267,6 +307,7 @@ class FolderRouter @Inject constructor(
             repo.updateNoteCount(newFolderId, newFolder.noteCount + 1)
         }
         repo.moveNote(noteId, newFolderId)
+        learn(note.embedding, confirmedFolderId = newFolderId, rejectedFolderId = note.folderId)
     }
 
     suspend fun rewriteNote(noteId: String, newText: String, updateTimestamp: Boolean) {
@@ -322,10 +363,27 @@ class FolderRouter @Inject constructor(
         return dot
     }
 
+    private fun normalize(v: FloatArray): FloatArray {
+        var sum = 0f
+        for (x in v) sum += x * x
+        val norm = sqrt(sum)
+        if (norm == 0f) return v
+        return FloatArray(v.size) { i -> v[i] / norm }
+    }
+
     companion object {
         private const val TAG = "FolderRouter"
         const val DEFAULT_THRESHOLD = 0.55f
-        const val DISAMBIGUATION_MARGIN = 0.03f
+
+        /** Gap between top-2 similarities at or below this -> ask the user. */
+        const val AMBIGUOUS_MARGIN = 0.02f
+
+        /** Gap at or above this -> clear winner, auto-sort regardless of threshold. */
+        const val CLEAR_MARGIN = 0.05f
+
+        /** How far a rejected folder's centroid is pushed away from the note. */
+        private const val REJECTION_RATE = 0.1f
+
         const val SEARCH_MIN_SIM = 0.35f
         const val SEARCH_RELATIVE_MARGIN = 0.25f
         private val URL_PATTERN = Regex("https?://\\S+|www\\.\\S+|[\\w-]+\\.[a-z]{2,}")

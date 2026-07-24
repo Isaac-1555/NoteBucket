@@ -83,6 +83,10 @@ class NoteBucketRepository @Inject constructor(
         folderDao.updateEmbedding(folderId, embedding.toBytes())
     }
 
+    suspend fun updateFolderLearning(folderId: String, centroid: FloatArray, learnedCount: Int) {
+        folderDao.updateLearning(folderId, centroid.toBytes(), learnedCount)
+    }
+
     suspend fun updateNoteCount(folderId: String, noteCount: Int) {
         folderDao.updateNoteCount(folderId, noteCount)
     }
